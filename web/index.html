@@ -174,6 +174,7 @@ code { background:rgba(0,113,227,.08); padding:2px 8px; border-radius:6px; font-
     <a class="nav-item active" data-page="dashboard">📊 仪表盘</a>
     <a class="nav-item" data-page="providers">🔌 渠道管理</a>
     <a class="nav-item" data-page="models">🤖 模型列表</a>
+    <a class="nav-item" data-page="routers">🧭 路由组</a>
     <a class="nav-item" data-page="api">🔑 API 密钥</a>
     <a class="nav-item" data-page="billing">💳 计费中心</a>
     <a class="nav-item" data-page="checkin">✅ 定时签到</a>
@@ -216,9 +217,21 @@ code { background:rgba(0,113,227,.08); padding:2px 8px; border-radius:6px; font-
     <div class="page" id="page-models">
       <h2 class="page-title">可用模型</h2>
       <div class="table-wrap">
-        <table><thead><tr><th>模型 ID</th><th>渠道</th><th>上下文</th></tr></thead>
-        <tbody id="models-table"><tr><td colspan="3" class="empty">请先添加渠道</td></tr></tbody></table>
+        <table><thead><tr><th>模型 ID</th><th>渠道</th><th>分组</th><th>上下文</th></tr></thead>
+        <tbody id="models-table"><tr><td colspan="4" class="empty">请先添加渠道</td></tr></tbody></table>
       </div>
+    </div>
+
+    <!-- Routers -->
+    <div class="page" id="page-routers">
+      <div class="section-hdr" style="margin-bottom:16px">
+        <h2 class="page-title" style="margin-bottom:0">路由组</h2>
+        <button class="btn btn-primary" onclick="regenRouters()">🔄 一键自动分组</button>
+      </div>
+      <div class="card card-sub" style="margin-bottom:16px">
+        💡 客户端调用时 model 填组名（<code>快速</code> / <code>日常</code> / <code>识图</code>，也支持英文 <code>quick</code> / <code>high_quality</code> / <code>vision</code>），网关在组内自动按质量分择优转发。
+      </div>
+      <div class="cards" id="routers-cards" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))"></div>
     </div>
 
     <!-- API Key -->
@@ -346,9 +359,20 @@ code { background:rgba(0,113,227,.08); padding:2px 8px; border-radius:6px; font-
     <form id="provider-form" onsubmit="saveProvider(event)">
       <input type="hidden" id="prov-edit-id">
       <div class="form-group"><label>渠道名称</label><input id="prov-name" required placeholder="如 NVIDIA"></div>
-      <div class="form-group"><label>Base URL</label><input id="prov-url" required placeholder="https://integrate.api.nvidia.com/v1"></div>
-      <div class="form-group"><label>API Key</label><input id="prov-key" required placeholder="nvapi-..." type="password"></div>
-      <div class="form-group"><label>模型列表 (逗号分隔)</label><input id="prov-models" placeholder="model-a, model-b"></div>
+      <div class="form-group">
+          <label>Base URL</label>
+          <input id="prov-url" required placeholder="https://integrate.api.nvidia.com/v1">
+        </div>
+        <div class="form-group"><label>API Key</label><input id="prov-key" required placeholder="nvapi-..." type="password"></div>
+        <div class="form-group">
+          <label style="display:flex;justify-content:space-between;align-items:center">
+            <span>模型列表</span>
+            <button type="button" class="btn btn-sm" id="fetch-models-btn" onclick="fetchModelsForForm()">⬇ 自动获取模型</button>
+          </label>
+          <input id="prov-models" placeholder="留空将自动从上游获取, 或手动逗号分隔填写">
+          <div class="card-sub" style="margin-top:4px" id="fetch-models-hint">填好 URL 和 Key 后点「自动获取模型」, 可多选后保存。</div>
+          <div id="fetch-models-list" style="display:none;margin-top:8px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px"></div>
+        </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeModal('provider-modal')">取消</button>
         <button type="submit" class="btn btn-primary">保存</button>
@@ -422,6 +446,7 @@ async function loadPage(page) {
     case 'dashboard': loadDashboard(); break;
     case 'providers': loadProviders(); break;
     case 'models': loadModels(); break;
+    case 'routers': loadRouters(); break;
     case 'api': break;
     case 'billing': loadBilling(); break;
     case 'checkin': loadCheckin(); break;
@@ -478,6 +503,7 @@ async function loadProviders() {
       <td>${(p.models||[]).length}</td>
       <td><span class="badge ${p.enabled ? 'badge-green' : 'badge-red'}">${p.enabled ? '启用' : '禁用'}</span></td>
       <td>
+        <button class="btn btn-sm" onclick="refreshProviderModels(${p.id}, this)">刷新模型</button>
         <button class="btn btn-sm" onclick="editProvider(${p.id})">编辑</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id})">删除</button>
       </td>
@@ -488,9 +514,23 @@ async function loadModels() {
   const resp = await fetch(API + '/v1/models', {headers:headers()});
   const data = await resp.json();
   const tbody = document.getElementById('models-table');
-  if (!data.data || !data.data.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">请先添加渠道</td></tr>'; return; }
-  tbody.innerHTML = data.data.map(m => `
-    <tr><td><code>${m.id}</code></td><td>${m.owned_by}</td><td>${(m.context_length || 32768).toLocaleString()}</td></tr>`).join('');
+  if (!data.data || !data.data.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">请先添加渠道</td></tr>'; return; }
+  tbody.innerHTML = data.data.map(m => {
+    const grp = modelGroup(m.id);
+    return `<tr><td><code>${m.id}</code></td><td>${m.owned_by}</td><td>${grp}</td><td>${(m.context_length || 32768).toLocaleString()}</td></tr>`;
+  }).join('');
+}
+
+// 模型分组识别(与后端 router_group 同规则, 用于前端徽章展示)
+function modelGroup(id) {
+  const s = id.toLowerCase();
+  const visionPat = /(qwen.*vl|qvq|glm-?4?v|internvl|siglip|clip|vision|-vl-)/;
+  if (visionPat.test(s)) return '<span class="badge badge-accent">识图</span>';
+  const hqPat = /(glm-?[45]|qwen.*(max|plus|3\.5|2507)|deepseek.*(v3|r1|reasoner)|claude|gpt-4o?-?mini|kimi|f1|f2)/;
+  if (hqPat.test(s)) return '<span class="badge badge-green">日常</span>';
+  const quickPat = /(qwen3?-?8b|qwen.*72b|llama-?3\.?2.*3b|gemma.*2b|glm-?4?-?flash|deepseek.*lite|-8b|-7b|-3b)/;
+  if (quickPat.test(s)) return '<span class="badge badge-yellow">快速</span>';
+  return '<span class="badge">未分组</span>';
 }
 
 async function loadBilling() {
@@ -522,6 +562,10 @@ function openProviderModal(editId=null) {
   document.getElementById('prov-edit-id').value = editId || '';
   document.getElementById('provider-modal-title').textContent = editId ? '编辑渠道' : '添加渠道';
   ['prov-name','prov-url','prov-key','prov-models'].forEach(id => document.getElementById(id).value = '');
+  // 重置自动获取模型区域
+  document.getElementById('fetch-models-list').style.display = 'none';
+  document.getElementById('fetch-models-list').innerHTML = '';
+  document.getElementById('fetch-models-hint').textContent = '填好 URL 和 Key 后点「自动获取模型」, 可多选后保存。';
   if (editId) {
     fetch(API + '/api/providers/' + editId, {headers:headers()}).then(r=>r.json()).then(p => {
       document.getElementById('prov-name').value = p.name;
@@ -536,17 +580,135 @@ async function editProvider(id) { openProviderModal(id); }
 async function saveProvider(e) {
   e.preventDefault();
   const editId = document.getElementById('prov-edit-id').value;
+  // 优先取勾选的模型, 其次手动输入
+  const checked = [...document.querySelectorAll('#fetch-models-list input:checked')].map(c => c.value);
+  const manual = document.getElementById('prov-models').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const models = checked.length ? checked : manual;
   const data = {
     name: document.getElementById('prov-name').value,
     base_url: document.getElementById('prov-url').value,
     api_key: document.getElementById('prov-key').value,
-    models: document.getElementById('prov-models').value.split(',').map(s=>s.trim()).filter(Boolean),
+    models: models,
   };
   const resp = editId
     ? await fetch(API + '/api/providers/' + editId, {method:'PUT',headers:headers(),body:JSON.stringify(data)})
     : await fetch(API + '/api/providers', {method:'POST',headers:headers(),body:JSON.stringify(data)});
-  if (resp.ok) { closeModal('provider-modal'); showToast(editId ? '更新成功' : '添加成功'); loadProviders(); }
+  if (resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    closeModal('provider-modal');
+    showToast(d.msg || (editId ? '更新成功' : '添加成功'));
+    loadProviders();
+  }
   else { const err = await resp.json(); showToast(err.detail || '操作失败', 'error'); }
+}
+
+// ── 自动获取模型(渠道弹窗) ──
+async function fetchModelsForForm() {
+  const base_url = document.getElementById('prov-url').value.trim();
+  const api_key = document.getElementById('prov-key').value.trim();
+  const hint = document.getElementById('fetch-models-hint');
+  const list = document.getElementById('fetch-models-list');
+  const btn = document.getElementById('fetch-models-btn');
+  if (!base_url || !api_key) { showToast('请先填写 Base URL 和 API Key', 'error'); return; }
+
+  btn.disabled = true; btn.textContent = '获取中...';
+  hint.textContent = '正在请求上游模型列表...';
+  list.style.display = 'none';
+  try {
+    const resp = await fetch(API + '/api/providers/fetch-models', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({base_url, api_key})
+    });
+    const d = await resp.json();
+    if (!resp.ok) { hint.textContent = d.detail || '获取失败'; showToast(d.detail || '获取失败', 'error'); return; }
+    const models = d.models || [];
+    if (!models.length) { hint.textContent = '上游返回空列表'; return; }
+    hint.textContent = `✓ 获取到 ${models.length} 个模型, 已默认全选, 可取消勾选不需要的`;
+    list.style.display = 'block';
+    list.innerHTML = models.map(m => `
+      <label style="display:flex;align-items:center;gap:8px;padding:3px 4px;font-size:12px;cursor:pointer">
+        <input type="checkbox" value="${m.replace(/"/g,'&quot;')}" checked style="width:auto">
+        <span style="word-break:break-all">${m}</span>
+      </label>`).join('');
+  } catch (e) {
+    hint.textContent = '获取失败: ' + e;
+    showToast('获取模型失败', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '⬇ 自动获取模型';
+  }
+}
+
+// ── 刷新指定渠道模型(渠道表格) ──
+async function refreshProviderModels(id, btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '刷新中...';
+  try {
+    const resp = await fetch(API + `/api/providers/${id}/refresh-models`, {method:'POST',headers:headers()});
+    const d = await resp.json();
+    if (resp.ok) { showToast(d.msg || '已刷新'); loadProviders(); }
+    else showToast(d.detail || '刷新失败', 'error');
+  } catch (e) {
+    showToast('刷新失败', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 路由组页面
+// ─────────────────────────────────────────────
+const GROUP_META = {
+  quick:     { label: '⚡ 快速', desc: '小参数模型, 响应快, 适合轻量任务', cls: 'badge-yellow' },
+  high_quality: { label: '💎 日常', desc: '高质量推理/创作模型', cls: 'badge-green' },
+  vision:    { label: '👁 识图', desc: '多模态视觉模型', cls: 'badge-accent' },
+};
+
+async function loadRouters() {
+  const resp = await fetch(API + '/api/routers', {headers:headers()});
+  const d = await resp.json();
+  const data = d.data || {};
+  const box = document.getElementById('routers-cards');
+  const names = Object.keys(GROUP_META).concat(Object.keys(data).filter(k => !(k in GROUP_META)));
+  box.innerHTML = names.map(name => {
+    const meta = GROUP_META[name] || { label: name, desc: '自定义分组', cls: 'badge' };
+    const models = data[name] || [];
+    return `
+    <div class="card">
+      <div class="section-hdr" style="margin-bottom:10px">
+        <h3>${meta.label}</h3>
+        <span class="badge ${meta.cls}">${models.length} 个模型</span>
+      </div>
+      <div class="card-sub" style="margin-bottom:10px">${meta.desc} · 调用: <code>model="${name}"</code></div>
+      <div style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+        ${models.length ? models.map(m => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 8px;background:var(--bg);border-radius:8px">
+            <code style="background:transparent;padding:0;font-size:11px">${m}</code>
+            <button class="btn btn-sm btn-danger" style="padding:1px 8px" onclick="removeRouterModel('${name}', '${String(m).replace(/'/g,"\\'")}')">×</button>
+          </div>`).join('') : '<div class="empty" style="padding:16px">暂无模型, 点击右上「一键自动分组」生成</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function regenRouters() {
+  const resp = await fetch(API + '/api/routers/init-defaults', {method:'POST',headers:headers()});
+  if (resp.ok) {
+    const d = await resp.json();
+    showToast('已根据渠道模型重新分组: ' + (d.created || []).join(', '));
+    loadRouters();
+  } else showToast('分组失败', 'error');
+}
+
+async function removeRouterModel(group, model) {
+  const resp = await fetch(API + '/api/routers', {headers:headers()});
+  const d = await resp.json();
+  const models = ((d.data || {})[group] || []).filter(m => m !== model);
+  const save = await fetch(API + '/api/routers', {
+    method: 'POST', headers: headers(),
+    body: JSON.stringify({name: group, models})
+  });
+  if (save.ok) { showToast('已从分组移除'); loadRouters(); }
+  else showToast('移除失败', 'error');
 }
 async function deleteProvider(id) {
   if (!confirm('确定删除?')) return;

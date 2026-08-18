@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """隔离 DB 的测试客户端"""
+    """隔离 DB 的测试客户端(管理面板 JWT 认证)"""
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("GW_DB_PATH", str(db_path))
 
@@ -24,7 +24,7 @@ def client(tmp_path, monkeypatch):
 
     # 建测试用户 + 渠道
     s = get_session()
-    from backend.auth.security import encrypt_secret
+    from backend.auth.security import encrypt_secret, create_access_token
     import bcrypt
     pw_hash = bcrypt.hashpw(b"Test1234!", bcrypt.gensalt()).decode()
     u = User(username="test", email="test@x.com", password_hash=pw_hash, tier="free", api_key="sk-test")
@@ -39,15 +39,19 @@ def client(tmp_path, monkeypatch):
     )
     s.add(p)
     s.commit()
+    token = create_access_token(u.id)
     s.close()
 
     from backend.main import app
-    return TestClient(app)
+    c = TestClient(app)
+    # 管理面板走 JWT(与 web 前端一致)
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 
 
 def test_list_routers_empty(client):
     """初始状态无路由组"""
-    r = client.get("/api/routers", headers={"Authorization": "Bearer sk-test"})
+    r = client.get("/api/routers")
     assert r.status_code == 200
     data = r.json()
     assert "data" in data or isinstance(data, dict)
@@ -59,10 +63,10 @@ def test_list_routers_empty(client):
 def test_create_router(client):
     """创建路由组"""
     body = {"name": "quick", "models": ["NVIDIA-z-ai/glm-5.2"]}
-    r = client.post("/api/routers", json=body, headers={"Authorization": "Bearer sk-test"})
+    r = client.post("/api/routers", json=body)
     assert r.status_code == 200
     # 验证能拉到
-    r2 = client.get("/api/routers", headers={"Authorization": "Bearer sk-test"})
+    r2 = client.get("/api/routers")
     data = r2.json()
     routers = data.get("data", data) if isinstance(data, dict) else data
     assert "quick" in routers
@@ -71,12 +75,10 @@ def test_create_router(client):
 
 def test_update_router(client):
     """更新路由组成员"""
-    client.post("/api/routers", json={"name": "vision", "models": ["NVIDIA-qwen-vl-plus"]},
-                headers={"Authorization": "Bearer sk-test"})
+    client.post("/api/routers", json={"name": "vision", "models": ["NVIDIA-qwen-vl-plus"]})
     # 更新
-    client.post("/api/routers", json={"name": "vision", "models": ["NVIDIA-z-ai/glm-5.2"]},
-                headers={"Authorization": "Bearer sk-test"})
-    r = client.get("/api/routers", headers={"Authorization": "Bearer sk-test"})
+    client.post("/api/routers", json={"name": "vision", "models": ["NVIDIA-z-ai/glm-5.2"]})
+    r = client.get("/api/routers")
     data = r.json()
     routers = data.get("data", data) if isinstance(data, dict) else data
     assert "NVIDIA-z-ai/glm-5.2" in routers["vision"]
@@ -84,11 +86,10 @@ def test_update_router(client):
 
 def test_delete_router(client):
     """删除路由组"""
-    client.post("/api/routers", json={"name": "tmp", "models": []},
-                headers={"Authorization": "Bearer sk-test"})
-    r = client.delete("/api/routers/tmp", headers={"Authorization": "Bearer sk-test"})
+    client.post("/api/routers", json={"name": "tmp", "models": []})
+    r = client.delete("/api/routers/tmp")
     assert r.status_code == 200
-    r2 = client.get("/api/routers", headers={"Authorization": "Bearer sk-test"})
+    r2 = client.get("/api/routers")
     data = r2.json()
     routers = data.get("data", data) if isinstance(data, dict) else data
     assert "tmp" not in routers
@@ -96,9 +97,8 @@ def test_delete_router(client):
 
 def test_router_in_models_list(client):
     """路由组应出现在 /v1/models 输出列表"""
-    client.post("/api/routers", json={"name": "my-group", "models": ["NVIDIA-z-ai/glm-5.2"]},
-                headers={"Authorization": "Bearer sk-test"})
-    r = client.get("/v1/models", headers={"Authorization": "Bearer sk-test"})
+    client.post("/api/routers", json={"name": "my-group", "models": ["NVIDIA-z-ai/glm-5.2"]})
+    r = client.get("/v1/models")
     assert r.status_code == 200
     ids = [m["id"] for m in r.json().get("data", [])]
     assert "my-group" in ids

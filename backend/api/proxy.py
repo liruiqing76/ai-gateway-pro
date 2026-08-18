@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend.auth.middleware import get_current_user_from_api_key, check_quota
+from backend.auth.middleware import get_current_user_from_api_key, get_current_user_any, check_quota
 from backend.auth.security import decrypt_secret
 from backend.core.proxy import (
     pick_available_models,
@@ -168,7 +168,7 @@ async def proxy_chat(
 # ============================================================
 @router.get("/models")
 async def proxy_models(
-    user: User = Depends(get_current_user_from_api_key),
+    user: User = Depends(get_current_user_any),
 ):
     session = get_session()
     try:

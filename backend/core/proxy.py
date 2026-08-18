@@ -60,9 +60,11 @@ def pick_available_models(
                 return []
         return d
 
-    # 1. 路由组
-    if routers and requested_model in routers:
-        target_models = set(routers[requested_model])
+    # 1. 路由组(中文组名「快速/日常/识图」自动映射到英文键)
+    from backend.core.router_group import normalize_group_name
+    group_key = normalize_group_name(requested_model) if requested_model else None
+    if routers and group_key in routers:
+        target_models = set(routers[group_key])
         for p in providers:
             for m in _model_list(p):
                 if m in _disabled_list(p):

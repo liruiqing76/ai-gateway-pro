@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 
-from backend.auth.middleware import get_current_user_from_api_key
+from backend.auth.middleware import get_current_user_from_jwt
 from backend.models import get_session, User, Router, Provider
 
 logger = logging.getLogger("gateway.routers")
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/routers", tags=["routers"])
 
 
 @router.get("")
-async def list_routers(user: User = Depends(get_current_user_from_api_key)):
+async def list_routers(user: User = Depends(get_current_user_from_jwt)):
     """列出用户的所有路由组"""
     session = get_session()
     try:
@@ -29,7 +29,7 @@ async def list_routers(user: User = Depends(get_current_user_from_api_key)):
 
 
 @router.post("")
-async def save_router(request: Request, user: User = Depends(get_current_user_from_api_key)):
+async def save_router(request: Request, user: User = Depends(get_current_user_from_jwt)):
     """创建或更新一个路由组"""
     body = await request.json()
     name = body.get("name", "").strip()
@@ -55,7 +55,7 @@ async def save_router(request: Request, user: User = Depends(get_current_user_fr
 
 
 @router.delete("/{name}")
-async def delete_router(name: str, user: User = Depends(get_current_user_from_api_key)):
+async def delete_router(name: str, user: User = Depends(get_current_user_from_jwt)):
     """删除路由组"""
     session = get_session()
     try:
@@ -70,7 +70,7 @@ async def delete_router(name: str, user: User = Depends(get_current_user_from_ap
 
 
 @router.post("/init-defaults")
-async def init_default_routers(user: User = Depends(get_current_user_from_api_key)):
+async def init_default_routers(user: User = Depends(get_current_user_from_jwt)):
     """根据当前渠道模型自动生成 quick / high_quality / vision 三组（覆盖已有）"""
     session = get_session()
     try:

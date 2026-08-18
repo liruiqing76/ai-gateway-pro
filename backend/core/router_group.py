@@ -53,6 +53,21 @@ DEFAULT_ROUTER_GROUPS = {
 }
 
 
+# ── 组名中英文别名(参照 D:\AI模型网关: 客户端填中文组名即可调用) ──
+GROUP_ALIASES = {
+    "快速": "quick",
+    "日常": "high_quality",
+    "识图": "vision",
+}
+# 反向: 英文 -> 中文(前端展示用)
+GROUP_LABELS = {v: k for k, v in GROUP_ALIASES.items()}
+
+
+def normalize_group_name(name: str) -> str:
+    """中文组名归一化为英文键; 已是英文则原样返回"""
+    return GROUP_ALIASES.get(name, name)
+
+
 def classify_model(model: str) -> str:
     """将模型 ID 分类到默认组: quick / high_quality / vision / other
     顺序: vision 优先 (VL/vision 关键字), 再 high_quality, 再 quick
@@ -101,5 +116,5 @@ def build_router_groups(providers) -> dict:
 
 
 def resolve_router_group(model: str, router_groups: dict) -> list:
-    """请求 model 是组名时, 返回组内模型列表; 否则 None"""
-    return router_groups.get(model)
+    """请求 model 是组名(中/英文)时, 返回组内模型列表; 否则 None"""
+    return router_groups.get(normalize_group_name(model))

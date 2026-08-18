@@ -187,14 +187,22 @@ class ProviderTemplate(Base):
 _engine = None
 
 def get_db_url() -> str:
-    """获取数据库 URL,默认 SQLite 用绝对路径"""
+    """获取数据库 URL,默认 SQLite 用绝对路径
+    优先级: DATABASE_URL > GW_DB_PATH(桌面版 exe 目录) > backend/data/gateway.db
+    """
     import os
     from backend.config import settings
     url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
-    if not url:
-        db_path = (Path(__file__).parent.parent / "data" / "gateway.db").as_posix()
-        url = f"sqlite:///{db_path}"
-    return url
+    if url:
+        return url
+    # 桌面模式: desktop.py 设置 GW_DB_PATH 指向 exe 旁的持久化目录,
+    # 否则单文件 exe 每次解包到不同临时目录导致数据丢失
+    gw_path = os.getenv("GW_DB_PATH")
+    if gw_path:
+        Path(gw_path).parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{Path(gw_path).as_posix()}"
+    db_path = (Path(__file__).parent.parent / "data" / "gateway.db").as_posix()
+    return f"sqlite:///{db_path}"
 
 
 def _get_engine():

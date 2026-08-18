@@ -55,6 +55,36 @@ async def get_current_user_from_api_key(
         session.close()
 
 
+async def get_current_user_any(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> User:
+    """双认证: 先按 JWT(管理面板), 失败再按 API Key(OpenAI 兼容客户端)"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="未提供认证凭证")
+    session = get_session()
+    try:
+        # 1) JWT
+        payload = decode_token(credentials.credentials)
+        if payload and payload.get("type") == "access":
+            user = session.query(User).filter_by(
+                id=int(payload.get("sub", 0)), is_active=True
+            ).first()
+            if user:
+                request.state.user = user
+                return user
+        # 2) API Key
+        user = session.query(User).filter_by(
+            api_key=credentials.credentials, is_active=True
+        ).first()
+        if user:
+            request.state.user = user
+            return user
+        raise HTTPException(status_code=401, detail="凭证无效")
+    finally:
+        session.close()
+
+
 def require_admin(user: User = Depends(get_current_user_from_jwt)) -> User:
     """管理员权限校验"""
     if user.role != "admin":
