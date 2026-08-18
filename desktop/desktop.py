@@ -86,24 +86,13 @@ class CheckinAPI:
             return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
 
     def run_checkin(self, app: str = "all") -> str:
-        wb = self._read_last("wb_last_checkin.txt")
-        trae = self._read_last("last_checkin.txt")
-        today = str(date.today())
-        return json.dumps({
-            "workbuddy": {"signed": wb == today, "date": wb},
-            "trae": {"signed": trae == today, "date": trae},
-        })
-
-    def run_checkin(self, app: str = "all") -> str:
-        """执行签到: app = workbuddy | trae | all"""
+        """执行签到: app = workbuddy | trae | all, 返回各应用执行结果"""
         results = {}
         checkin_dir = BASE / "checkin"
         if app in ("all", "workbuddy"):
-            r = self._run(checkin_dir / "workbuddy_checkin.py")
-            results["workbuddy"] = r
+            results["workbuddy"] = self._run(checkin_dir / "workbuddy_checkin.py")
         if app in ("all", "trae"):
-            r = self._run(checkin_dir / "trae_checkin.py")
-            results["trae"] = r
+            results["trae"] = self._run(checkin_dir / "trae_checkin.py")
         return json.dumps(results)
 
     def _read_last(self, filename: str) -> str:
@@ -136,6 +125,83 @@ class CheckinAPI:
             return "签到超时(60s)"
         except Exception as e:
             return str(e)
+
+
+# ── 设置 API (开机自启等) ──
+class SettingsAPI:
+    """暴露给前端的应用设置接口（开机自启、服务信息）"""
+
+    def __init__(self):
+        self.startup_dir = self._resolve_startup_dir()
+
+    def _resolve_startup_dir(self) -> Path:
+        """获取当前 exe 所在目录（源码运行取项目根）"""
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parent.parent
+
+    def _startup_exe(self) -> Path:
+        """开机自启项指向的 exe（打包后为当前 exe，否则为 python desktop.py）"""
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable)
+        return self.startup_dir / "desktop" / "desktop.py"
+
+    def get_settings(self) -> str:
+        """返回当前设置与应用信息"""
+        exe = self._startup_exe()
+        info = {
+            "version": "0.1.0",
+            "executable": str(exe),
+            "auto_start_supported": getattr(sys, "frozen", False),
+            "auto_start_enabled": False,
+        }
+        try:
+            info["auto_start_enabled"] = self._is_autostart()
+        except Exception:
+            pass  # winshell 缺失时仅报告未启用
+        if exe.exists():
+            try:
+                info["exe_size_mb"] = round(exe.stat().st_size / 1024 / 1024, 1)
+            except Exception:
+                pass
+        return json.dumps(info, ensure_ascii=False)
+
+    def _autostart_lnk(self) -> Path:
+        """Windows 开机自启快捷方式路径"""
+        import winshell
+        folder = winshell.startup()
+        name = "AI模型网关Pro" + (".lnk" if getattr(sys, "frozen", False) else "")
+        return Path(folder) / name
+
+    def set_auto_start(self, enabled: str) -> str:
+        """开启/关闭开机自启: {"enabled": true|false}"""
+        try:
+            enabled = json.loads(enabled) if isinstance(enabled, str) else enabled
+            enabled = bool(enabled.get("enabled", False))
+        except Exception:
+            enabled = bool(enabled)
+
+        if not getattr(sys, "frozen", False):
+            return json.dumps({"ok": False, "error": "仅打包后的桌面应用支持开机自启"}, ensure_ascii=False)
+
+        import winshell
+        from win32com.client import Dispatch
+
+        lnk = self._autostart_lnk()
+        if enabled:
+            lnk.parent.mkdir(parents=True, exist_ok=True)
+            shell = Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortCut(str(lnk))
+            shortcut.Targetpath = str(self._startup_exe())
+            shortcut.WorkingDirectory = str(self.startup_dir)
+            shortcut.save()
+        else:
+            if lnk.exists():
+                lnk.unlink()
+        return json.dumps({"ok": True, "enabled": self._is_autostart()}, ensure_ascii=False)
+
+    def _is_autostart(self) -> bool:
+        return self._autostart_lnk().exists()
 
 
 # ── 启动 FastAPI ──
@@ -190,6 +256,7 @@ def main():
 
     # 创建窗口
     checkin_api = CheckinAPI(_scheduler)
+    settings_api = SettingsAPI()
     window = webview.create_window(
         "⚡ AI 模型网关 Pro v0.1.0",   # 加版本号, 便于在任务栏/Alt+Tab 识别
         url,
@@ -203,6 +270,7 @@ def main():
         confirm_close=False,
         js_api={
             "checkin": checkin_api,
+            "settings": settings_api,
         },
     )
     # 显式使用 Edge WebView2 引擎(已确认运行时已安装, GUIType 值为 'edgechromium')。

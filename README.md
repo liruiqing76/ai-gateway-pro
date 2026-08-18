@@ -52,6 +52,29 @@ pyinstaller ai_gateway_pro.spec
 
 输出在 `dist/AI模型网关Pro.exe`，双击运行。
 
+## 常见问题：桌面版窗口白屏 / 无界面
+
+**症状**：双击打包后的 exe，窗口能弹出，但内容是空白（白色或背景色），无法显示登录/管理界面。
+
+**根因**（三层，按出现顺序）：
+
+1. **WebView2 初始化失败（RPC_E_CHANGED_MODE）**：桌面壳依赖 `pythonnet`(clr) 启动 WebView2 控件。`pythonnet` 在导入阶段会把主线程 COM 设为 MTA（多线程套间），而 WebView2 要求主线程是 STA（单线程套间），两者冲突导致窗口创建/渲染失败，表现为整个界面不渲染。这对本机开发（`python desktop/desktop.py`）和打包 exe 都可能出现。
+2. **后端尚未就绪就导航**：桌面端通过 `http://127.0.0.1:8765/` 加载界面，而单文件 exe 启动时解包 + FastAPI 冷启动需要数秒到数十秒。若在 WebView2 就绪前立即导航，请求被拒（后端未监听）会落在一个失败页，且不会自动重试 → 空白。
+3. **渲染引擎被误选为 IE 内核**：旧版本未显式指定引擎时，WebView2 不可用会回退到 IE 或干脆失败。
+
+**修复措施**（已内置到 [desktop/desktop.py](desktop/desktop.py)）：
+
+- 在任何 `import webview` / `import pythonnet` **之前**，先把主线程 COM 显式初始化为 STA（`pythoncom.CoInitializeEx(COINIT_APARTMENTTHREADED)`），避免 pythonnet 抢先设为 MTA。
+- `gui='edgechromium'` 强制使用 WebView2 引擎，不选 IE。
+- 创建窗口前轮询 `/api/health`，后端就绪后再加载页面；仍未就绪则等待后重试，不再一次性跳到失败页。
+- 前端 `bootstrap()` 登录失败时自动重试，降低后端冷启动造成的偶发白屏。
+
+**如果仍然白屏，按下面排查**：
+
+1. `netstat -ano | findstr :8765` 确认后端是否在监听；后端未起则大概率是打包缺依赖或启动异常。
+2. 确认目标机器已安装 **Microsoft Edge WebView2 Runtime**（Windows 10/11 通常自带；内网或精简系统可能缺失）。
+3. 长期未发挥作用的旧 exe 建议**用当前源码重新打包一次**再验证（`pyinstaller ai_gateway_pro.spec`）。
+
 ## 架构
 
 ```

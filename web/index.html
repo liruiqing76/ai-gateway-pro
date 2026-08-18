@@ -6,29 +6,34 @@
 <title>AI 模型网关 Pro</title>
 <style>
 :root {
-  --bg: #0f1117;
-  --bg-card: #1a1d28;
-  --bg-hover: #242836;
-  --bg-input: #141720;
-  --border: #2a2d3a;
-  --text: #e4e6ef;
-  --text-dim: #888ca0;
-  --accent: #6366f1;
-  --accent-glow: #818cf8;
-  --green: #22c55e;
-  --red: #ef4444;
-  --yellow: #f59e0b;
-  --radius: 8px;
-  --radius-lg: 12px;
+  /* 苹果风浅色主题 */
+  --bg: #f5f5f7;
+  --bg-card: #ffffff;
+  --bg-hover: #f5f5f7;
+  --bg-input: #ffffff;
+  --border: #e5e5ea;
+  --border-strong: #d2d2d7;
+  --text: #1d1d1f;
+  --text-dim: #6e6e73;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --green: #34c759;
+  --red: #ff3b30;
+  --yellow: #ff9f0a;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 14px rgba(0,0,0,.08);
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 .app { display:flex; min-height:100vh; }
 
@@ -36,117 +41,127 @@ body {
 .sidebar {
   width: 220px; min-width: 220px; background: var(--bg-card);
   border-right: 1px solid var(--border);
-  padding: 16px 0; display:flex; flex-direction:column;
+  padding: 12px 0; display:flex; flex-direction:column;
   position: sticky; top: 0; height: 100vh;
 }
-.sidebar-logo { padding: 0 16px 14px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
-.sidebar-logo h1 { font-size: 16px; font-weight: 700; color: var(--accent-glow); }
+.sidebar-logo { padding: 8px 20px 14px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.sidebar-logo h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); }
 .sidebar-logo span { font-size: 11px; color: var(--text-dim); }
 
 .nav-item {
-  display:flex; align-items:center; gap: 8px; padding: 8px 16px; cursor:pointer;
+  display:flex; align-items:center; gap: 10px; padding: 9px 20px; cursor:pointer;
   color: var(--text-dim); font-size: 13px; transition: all .15s;
-  border-left: 3px solid transparent; margin: 1px 0;
+  border-left: 3px solid transparent; margin: 1px 0; border-radius: 0 8px 8px 0;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); }
-.nav-item.active { color: var(--accent-glow); border-left-color: var(--accent); background: rgba(99,102,241,.1); }
+.nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(0,113,227,.08); font-weight: 600; }
 
-.sidebar-footer { padding: 12px 16px; font-size: 11px; color: var(--text-dim); border-top: 1px solid var(--border); margin-top: auto; }
+.sidebar-footer { padding: 12px 20px; font-size: 11px; color: var(--text-dim); border-top: 1px solid var(--border); margin-top: auto; }
 
 /* ---- Main ---- */
-.main { flex:1; padding: 20px 28px; overflow-y:auto; }
+.main { flex:1; padding: 24px 32px; overflow-y:auto; }
 .page { display:none; }
 .page.active { display:block; }
-.page-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+.page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 20px; }
 
 /* ---- Cards ---- */
 .cards { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px; margin-bottom: 18px; }
 .card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 16px 18px; transition: border-color .15s;
+  padding: 18px 20px; box-shadow: var(--shadow-sm); transition: box-shadow .15s, transform .15s;
 }
-.card:hover { border-color: var(--accent); }
-.card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-.card-value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+.card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; }
+.card-value { font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text); }
 .card-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 
 /* ---- Stats row ---- */
 .stats-row { display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
 .stat-box {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 14px 18px; flex: 1; min-width: 180px; text-align: center;
+  padding: 16px 20px; flex: 1; min-width: 180px; text-align: center; box-shadow: var(--shadow-sm);
 }
-.stat-box .val { font-size: 28px; font-weight: 700; }
+.stat-box .val { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
 .stat-box .lbl { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 
 /* ---- Table ---- */
-.table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow:hidden; }
+.table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
 table { width:100%; border-collapse:collapse; }
-th { text-align:left; padding:10px 14px; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border); background: rgba(0,0,0,.15); }
-td { padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border); }
+th { text-align:left; padding:11px 16px; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.6px; border-bottom:1px solid var(--border); background: #fafafa; }
+td { padding:11px 16px; font-size:13px; border-bottom:1px solid var(--border); }
 tr:last-child td { border-bottom:none; }
-tr:hover td { background: var(--bg-hover); }
+tr:hover td { background: transparent; }
+tbody tr:hover { background: var(--bg-hover); }
 
 /* ---- Badge ---- */
 .badge {
-  display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600;
+  display:inline-block; padding:2px 9px; border-radius:20px; font-size:10px; font-weight:600;
 }
-.badge-green { background: rgba(34,197,94,.15); color: var(--green); }
-.badge-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
-.badge-red { background: rgba(239,68,68,.15); color: var(--red); }
-.badge-accent { background: rgba(99,102,241,.15); color: var(--accent-glow); }
+.badge-green { background: rgba(52,199,89,.12); color: #1d8a3d; }
+.badge-yellow { background: rgba(255,159,10,.14); color: #b25800; }
+.badge-red { background: rgba(255,59,48,.12); color: #d70015; }
+.badge-accent { background: rgba(0,113,227,.12); color: var(--accent); }
 
 /* ---- Buttons ---- */
 .btn {
-  padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border);
-  background: var(--bg-card); color: var(--text); cursor:pointer; font-size:12px; transition: all .15s;
+  padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border-strong);
+  background: var(--bg-card); color: var(--text); cursor:pointer; font-size: 12px; font-weight: 500; transition: all .15s;
 }
-.btn:hover { border-color: var(--accent); background: var(--bg-hover); }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-glow); }
-.btn-sm { padding: 3px 10px; font-size: 11px; }
-.btn-danger { border-color: var(--red); color: var(--red); }
-.btn-danger:hover { background: rgba(239,68,68,.1); }
+.btn-primary:hover { background: var(--accent-hover); color: #fff; }
+.btn-sm { padding: 4px 12px; font-size: 11px; border-radius: 8px; }
+.btn-danger { border-color: rgba(255,59,48,.4); color: var(--red); }
+.btn-danger:hover { background: rgba(255,59,48,.08); border-color: var(--red); color: var(--red); }
 
 /* ---- Form ---- */
 input, select {
-  padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+  padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border-strong);
   background: var(--bg-input); color: var(--text); font-size: 13px; width:100%;
-  outline: none; transition: border-color .15s;
+  outline: none; transition: border-color .15s, box-shadow .15s;
 }
-input:focus, select:focus { border-color: var(--accent); }
-.form-group { margin-bottom: 12px; }
-.form-group label { display:block; font-size:11px; color:var(--text-dim); margin-bottom:3px; text-transform:uppercase; letter-spacing:.5px; }
+input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,227,.15); }
+.form-group { margin-bottom: 14px; }
+.form-group label { display:block; font-size:11px; color:var(--text-dim); margin-bottom:5px; text-transform:uppercase; letter-spacing:.6px; font-weight: 600; }
 .form-row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
 
+/* ---- Toggle switch (苹果风开关) ---- */
+.switch { position:relative; display:inline-block; width:46px; height:28px; vertical-align:middle; cursor:pointer; }
+.switch input { opacity:0; width:0; height:0; }
+.switch .track { position:absolute; inset:0; border-radius:28px; background:#e9e9eb; transition:.2s; }
+.switch .thumb { position:absolute; top:2px; left:2px; width:24px; height:24px; border-radius:50%; background:#fff; box-shadow:0 2px 5px rgba(0,0,0,.25); transition:.2s; }
+.switch input:checked + .track { background: var(--green); }
+.switch input:checked + .track + .thumb { transform:translateX(18px); }
+
 /* ---- Modal ---- */
-.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); backdrop-filter: blur(4px); z-index:100; align-items:center; justify-content:center; }
 .modal-overlay.show { display:flex; }
 .modal {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 20px; width: 440px; max-width: 90vw; max-height: 80vh; overflow-y:auto;
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  padding: 22px; width: 460px; max-width: 90vw; max-height: 80vh; overflow-y:auto;
+  box-shadow: 0 20px 50px rgba(0,0,0,.2);
 }
-.modal h3 { font-size: 16px; margin-bottom: 14px; }
-.modal-actions { display:flex; gap: 8px; justify-content:flex-end; margin-top:14px; }
+.modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.modal-actions { display:flex; gap: 8px; justify-content:flex-end; margin-top:18px; }
 
 /* ---- Toast ---- */
-.toast { position:fixed; top:16px; right:16px; padding:10px 16px; border-radius:var(--radius); font-size:13px; z-index:200; animation: slideIn .3s; }
-.toast-success { background:rgba(34,197,94,.2); border:1px solid var(--green); color:var(--green); }
-.toast-error { background:rgba(239,68,68,.2); border:1px solid var(--red); color:var(--red); }
+.toast { position:fixed; top:20px; right:20px; padding:11px 18px; border-radius:var(--radius); font-size:13px; font-weight:500; z-index:200; box-shadow: var(--shadow-md); animation: slideIn .3s; }
+.toast-success { background:rgba(52,199,89,.12); border:1px solid rgba(52,199,89,.4); color:#1d8a3d; }
+.toast-error { background:rgba(255,59,48,.1); border:1px solid rgba(255,59,48,.4); color:#d70015; }
 @keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
 
 /* ---- Empty state ---- */
-.empty { text-align:center; padding: 32px; color:var(--text-dim); font-size:13px; }
-code { background:var(--bg-input); padding:2px 7px; border-radius:3px; font-size:12px; color:var(--accent-glow); }
+.empty { text-align:center; padding: 34px; color:var(--text-dim); font-size:13px; }
+code { background:rgba(0,113,227,.08); padding:2px 8px; border-radius:6px; font-size:12px; color:var(--accent); }
 
 /* ---- Welcome ---- */
-.welcome { padding: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 18px; text-align: center; }
-.welcome h2 { font-size: 18px; color: var(--accent-glow); }
-.welcome p { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+.welcome { padding: 26px; background: linear-gradient(135deg, #0071e3, #0a84ff); color:#fff; border-radius: var(--radius-lg); margin-bottom: 20px; text-align: center; box-shadow: var(--shadow-md); }
+.welcome h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+.welcome p { color: rgba(255,255,255,.85); font-size: 13px; margin-top: 4px; }
 
 /* ---- Section header ---- */
 .section-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; }
-.section-hdr h3 { font-size: 14px; font-weight: 600; }
+.section-hdr h3 { font-size: 15px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -161,6 +176,8 @@ code { background:var(--bg-input); padding:2px 7px; border-radius:3px; font-size
     <a class="nav-item" data-page="models">🤖 模型列表</a>
     <a class="nav-item" data-page="api">🔑 API 密钥</a>
     <a class="nav-item" data-page="billing">💳 计费中心</a>
+    <a class="nav-item" data-page="checkin">✅ 定时签到</a>
+    <a class="nav-item" data-page="settings">⚙️ 设置</a>
     <div class="sidebar-footer"><span id="user-info">未登录</span></div>
   </nav>
 
@@ -235,6 +252,88 @@ code { background:var(--bg-input); padding:2px 7px; border-radius:3px; font-size
       <div class="table-wrap">
         <table><thead><tr><th>订单号</th><th>计划</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
         <tbody id="orders-table"><tr><td colspan="5" class="empty">暂无订单</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Checkin -->
+    <div class="page" id="page-checkin">
+      <h2 class="page-title">定时签到</h2>
+      <div id="checkin-not-desktop" style="display:none" class="card card-sub" style="margin-bottom:16px"></div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="section-hdr" style="margin-bottom:14px">
+          <h3>⏰ 每日定时签到</h3>
+          <span class="badge badge-green" id="checkin-enabled-tag">已启用</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>WorkBuddy 签到时间</label>
+            <input type="time" id="cb-wb-time" value="09:00" onchange="saveCheckinSchedule()">
+          </div>
+          <div class="form-group">
+            <label>Trae 签到时间</label>
+            <input type="time" id="cb-trae-time" value="09:05" onchange="saveCheckinSchedule()">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="switch-label" style="display:flex;align-items:center;gap:10px">
+            <span class="switch"><input type="checkbox" id="cb-enabled" onchange="saveCheckinSchedule()"><span class="track"></span><span class="thumb"></span></span>
+            <span style="font-size:13px">启用自动签到</span>
+          </label>
+        </div>
+        <div class="card-sub" style="margin-top:4px">下次执行：<span id="cb-next-run">—</span></div>
+      </div>
+
+      <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+        <div class="card">
+          <div class="section-hdr" style="margin-bottom:8px">
+            <h3>🤖 WorkBuddy</h3>
+            <span class="badge badge-yellow" id="wb-status-tag">未签到</span>
+          </div>
+          <div class="card-sub" style="margin-bottom:12px">最后签到：<span id="wb-last">从未</span></div>
+          <button class="btn btn-primary btn-sm" id="wb-run-btn" onclick="runCheckin('workbuddy')">立即签到</button>
+        </div>
+        <div class="card">
+          <div class="section-hdr" style="margin-bottom:8px">
+            <h3>🎯 Trae</h3>
+            <span class="badge badge-yellow" id="trae-status-tag">未签到</span>
+          </div>
+          <div class="card-sub" style="margin-bottom:12px">最后签到：<span id="trae-last">从未</span></div>
+          <button class="btn btn-primary btn-sm" id="trae-run-btn" onclick="runCheckin('trae')">立即签到</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px;display:none" id="checkin-log-card">
+        <div class="section-hdr" style="margin-bottom:8px"><h3>签到日志</h3></div>
+        <pre style="background:var(--bg);padding:14px;border-radius:var(--radius);font-size:12px;max-height:280px;overflow-y:auto;color:var(--text);white-space:pre-wrap" id="checkin-log"></pre>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="page" id="page-settings">
+      <h2 class="page-title">设置</h2>
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="section-hdr" style="margin-bottom:6px"><h3>⚡ 通用</h3></div>
+        <div class="form-group" style="margin-top:10px">
+          <label class="switch-label" style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:13px;font-weight:500">开机自启动</span>
+            <span class="switch"><input type="checkbox" id="boot-enabled" onchange="toggleAutoStart()"><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <div class="card-sub" style="margin-top:8px" id="boot-hint">开启后，登录系统时自动启动本应用。</div>
+        </div>
+        <div class="form-group">
+          <label class="switch-label" style="display:flex;align-items:center;justify-content:space-between;opacity:.5;pointer-events:none">
+            <span style="font-size:13px;font-weight:500">系统托盘常驻</span>
+            <span class="switch"><input type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <div class="card-sub" style="margin-top:8px">关闭窗口时最小化到托盘（开发中）</div>
+        </div>
+      </div>
+      <div class="card" style="max-width:560px">
+        <div class="section-hdr" style="margin-bottom:6px"><h3>ℹ️ 关于</h3></div>
+        <div class="form-group" style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span class="card-sub">版本</span><span id="about-version">—</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:6px"><span class="card-sub">可执行文件</span><span id="about-exe" style="max-width:70%;text-align:right;word-break:break-all;color:var(--text)">—</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:6px"><span class="card-sub">安装大小</span><span id="about-size">—</span></div>
+        </div>
       </div>
     </div>
   </main>
@@ -325,6 +424,8 @@ async function loadPage(page) {
     case 'models': loadModels(); break;
     case 'api': break;
     case 'billing': loadBilling(); break;
+    case 'checkin': loadCheckin(); break;
+    case 'settings': loadSettings(); break;
   }
 }
 
@@ -495,6 +596,139 @@ async function placeOrder(plan) {
   });
   if (resp.ok) { const d = await resp.json(); showToast('订单已创建: ' + d.order_no); loadBilling(); }
   else { const err = await resp.json(); showToast(err.detail || '下单失败', 'error'); }
+}
+
+// ─────────────────────────────────────────────
+// 定时签到 (通过 pywebview 桥调用桌面端)
+// ─────────────────────────────────────────────
+const isDesktop = () => typeof window.pywebview !== 'undefined' && !!window.pywebview.api;
+
+function checkinApi() { return window.pywebview.api.checkin; }
+
+async function loadCheckin() {
+  if (!isDesktop()) {
+    const box = document.getElementById('checkin-not-desktop');
+    box.style.display = 'block';
+    box.innerHTML = '⚠️ 定时签到仅在桌面客户端内可用，请通过桌面版 gateway.exe 打开本界面。';
+    return;
+  }
+  try {
+    const status = JSON.parse(await checkinApi().get_status());
+    const wb = status.workbuddy || {};
+    const trae = status.trae || {};
+    const sch = status.schedule || {};
+
+    document.getElementById('cb-enabled').checked = sch.enabled !== false;
+    document.getElementById('cb-wb-time').value = sch.workbuddy_time || '09:00';
+    document.getElementById('cb-trae-time').value = sch.trae_time || '09:05';
+    document.getElementById('checkin-enabled-tag').textContent = sch.enabled === false ? '已停用' : '已启用';
+    document.getElementById('checkin-enabled-tag').className = 'badge ' + (sch.enabled === false ? 'badge-red' : 'badge-green');
+
+    setCheckinBadge('wb', wb); setCheckinBadge('trae', trae);
+
+    const next = sch.next_run || {};
+    document.getElementById('cb-next-run').textContent =
+      (next.workbuddy || next.trae)
+        ? `WorkBuddy ${formatTime(next.workbuddy)} · Trae ${formatTime(next.trae)}`
+        : '—';
+  } catch (e) {
+    showToast('获取签到状态失败', 'error');
+  }
+}
+
+function setCheckinBadge(app, data) {
+  const signed = data && data.signed;
+  const tag = document.getElementById(app + '-status-tag');
+  const last = document.getElementById(app + '-last');
+  last.textContent = (data && data.date) || '从未';
+  tag.textContent = signed ? '今日已签' : '未签到';
+  tag.className = 'badge ' + (signed ? 'badge-green' : 'badge-yellow');
+  document.getElementById(app + '-run-btn').disabled = !!signed;
+  document.getElementById(app + '-run-btn').textContent = signed ? '✅ 今日已完成' : '立即签到';
+}
+
+function formatTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+async function saveCheckinSchedule() {
+  if (!isDesktop()) { showToast('仅桌面客户端支持', 'error'); return; }
+  try {
+    const data = {
+      enabled: document.getElementById('cb-enabled').checked,
+      workbuddy_time: document.getElementById('cb-wb-time').value || '09:00',
+      trae_time: document.getElementById('cb-trae-time').value || '09:05',
+    };
+    const resp = JSON.parse(await checkinApi().save_schedule(JSON.stringify(data)));
+    if (resp.ok) { showToast('定时设置已保存'); loadCheckin(); }
+    else showToast('保存失败: ' + (resp.error || '未知错误'), 'error');
+  } catch (e) { showToast('保存失败', 'error'); }
+}
+
+async function runCheckin(app) {
+  if (!isDesktop()) { showToast('仅桌面客户端支持', 'error'); return; }
+  const btn = document.getElementById(app + '-run-btn');
+  btn.disabled = true; btn.textContent = '签到中...';
+  const logBox = document.getElementById('checkin-log');
+  const card = document.getElementById('checkin-log-card');
+  card.style.display = 'block'; logBox.textContent = '签到中...';
+  try {
+    const resp = JSON.parse(await checkinApi().run_checkin(app));
+    const result = resp[app] || JSON.stringify(resp);
+    logBox.textContent = result;
+    showToast(result.includes('✅') || result.includes('成功') ? '签到成功' : '签到完成，查看日志');
+  } catch (e) {
+    logBox.textContent = '执行失败: ' + e;
+    showToast('签到执行失败', 'error');
+  } finally {
+    setTimeout(loadCheckin, 600);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 设置 (通过 pywebview 桥)
+// ─────────────────────────────────────────────
+async function loadSettings() {
+  if (!isDesktop()) {
+    document.getElementById('boot-enabled').disabled = true;
+    document.getElementById('boot-hint').textContent = '设置仅在桌面客户端内可用';
+    return;
+  }
+  try {
+    const info = JSON.parse(await window.pywebview.api.settings.get_settings());
+    document.getElementById('about-version').textContent = 'v' + (info.version || '0.1.0');
+    document.getElementById('about-exe').textContent = info.executable || '—';
+    document.getElementById('about-size').textContent = info.exe_size_mb ? info.exe_size_mb + ' MB' : '—';
+    const boot = document.getElementById('boot-enabled');
+    boot.checked = !!info.auto_start_enabled;
+    if (!info.auto_start_supported) {
+      boot.disabled = true;
+      document.getElementById('boot-hint').textContent = '仅打包后的桌面应用支持开机自启（源码运行时不可用）';
+    }
+  } catch (e) { showToast('读取设置失败', 'error'); }
+}
+
+async function toggleAutoStart() {
+  const on = document.getElementById('boot-enabled').checked;
+  document.getElementById('boot-hint').textContent = on ? '正在开启...' : '正在关闭...';
+  try {
+    const resp = JSON.parse(await window.pywebview.api.settings.set_auto_start(JSON.stringify({enabled: on})));
+    if (resp.ok) {
+      document.getElementById('boot-enabled').checked = !!resp.enabled;
+      document.getElementById('boot-hint').textContent = resp.enabled ? '已开启开机自启动' : '已关闭开机自启动';
+      showToast(resp.enabled ? '已开启开机自启' : '已关闭开机自启');
+    } else {
+      document.getElementById('boot-enabled').checked = !on;
+      document.getElementById('boot-hint').textContent = resp.error || '操作失败';
+      showToast(resp.error || '操作失败', 'error');
+    }
+  } catch (e) {
+    document.getElementById('boot-enabled').checked = !on;
+    document.getElementById('boot-hint').textContent = '操作失败';
+    showToast('操作失败', 'error');
+  }
 }
 
 // 启动: 若后端尚未就绪(窗口先打开)导致登录失败, 自动重试, 避免白屏

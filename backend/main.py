@@ -72,7 +72,6 @@ app.include_router(proxy_router)
 app.include_router(billing_router)
 app.include_router(routers_router)
 app.include_router(usage_router)
-app.include_router(usage_router)
 
 
 @app.get("/")
