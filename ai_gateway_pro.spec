@@ -1,0 +1,78 @@
+# -*- mode: python ; coding: utf-8 -*-
+# PyInstaller spec — AI 模型网关 Pro 桌面版
+
+import os
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all
+
+BASE = Path(os.path.abspath('.'))
+WEB_DIR = BASE / 'web'  # desktop.py 实际加载的是 web/index.html(纯 JS 界面), 非 web-vue/dist
+
+# 完整收集关键包(含数据文件/dll)
+datas, binaries, hiddenimports = [], [], []
+for pkg in ['uvicorn', 'webview', 'apscheduler', 'fastapi', 'starlette',
+            'pydantic', 'sqlalchemy', 'httpx', 'bcrypt', 'jwt', 'cryptography',
+            'typing_extensions', 'pythoncom', 'pywintypes', 'win32com']:
+    try:
+        d, b, h = collect_all(pkg)
+        datas += d
+        binaries += b
+        hiddenimports += h
+    except Exception:
+        pass
+
+# WebView2 .NET 控件 DLL 必须显式收集
+try:
+    wv_d, wv_b, wv_h = collect_all('webview.lib')
+    datas += wv_d
+    binaries += wv_b
+    hiddenimports += wv_h
+except Exception:
+    pass
+
+a = Analysis(
+    ['desktop/desktop.py'],
+    pathex=[str(BASE)],
+    binaries=binaries,
+    datas=datas + [
+        (str(WEB_DIR), 'web'),       # desktop.py 通过 BASE/web/index.html 加载
+        ('backend', 'backend'),
+        ('desktop', 'desktop'),
+    ],
+    hiddenimports=hiddenimports + [
+        'pythoncom',
+        'pywintypes',
+        'win32timezone',
+        'win32com',
+        'win32com.client',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'pandas', 'PySide6',
+              'pytest', '_pytest', 'py', 'pluggy', 'iniconfig', 'packaging'],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='AI模型网关Pro',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    icon=None,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)

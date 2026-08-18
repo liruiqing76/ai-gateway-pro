@@ -1,0 +1,110 @@
+[
+  {
+    "name": "NVIDIA",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "models": [
+      "deepseek-ai/deepseek-v4-flash-0731",
+      "meta/llama-3.2-11b-vision-instruct",
+      "meta/llama-3.2-90b-vision-instruct",
+      "microsoft/phi-3-vision-128k-instruct",
+      "minimaxai/minimax-m3",
+      "moonshotai/kimi-k2.6",
+      "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "nvidia/nemotron-3-super-120b-a12b",
+      "nvidia/nemotron-3-ultra-550b-a55b",
+      "nvidia/nemotron-nano-12b-v2-vl",
+      "z-ai/glm-5.2"
+    ],
+    "free_only": true,
+    "signup_url": "https://build.nvidia.com/",
+    "config_url": "https://build.nvidia.com/explore",
+    "notes": "NVIDIA 免费额度:每月 1000 次调用。注册后访问 build.nvidia.com 获取 API Key。",
+    "tags": ["免费", "NVIDIA", "通用"]
+  },
+  {
+    "name": "魔搭 (ModelScope)",
+    "base_url": "https://api-inference.modelscope.cn/v1",
+    "models": [
+      "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "deepseek-ai/DeepSeek-V4-Pro",
+      "MiniMax/MiniMax-M3",
+      "OpenGVLab/InternVL3_5-241B-A28B",
+      "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-PT",
+      "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+      "Qwen/Qwen3-Next-80B-A3B-Instruct",
+      "Qwen/Qwen3-Next-80B-A3B-Thinking",
+      "Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "Qwen/Qwen3-VL-8B-Instruct",
+      "Qwen/Qwen3-VL-8B-Thinking",
+      "Qwen/Qwen3.5-122B-A10B",
+      "Qwen/Qwen3.5-27B",
+      "Qwen/Qwen3.5-35B-A3B",
+      "Qwen/Qwen3.5-397B-A17B",
+      "Tencent-Hunyuan/Hy3",
+      "ZhipuAI/GLM-5.2"
+    ],
+    "free_only": true,
+    "signup_url": "https://modelscope.cn/",
+    "config_url": "https://modelscope.cn/my/apiKey",
+    "notes": "阿里云魔搭社区免费推理。注册后访问个人中心获取 API Key。",
+    "tags": ["免费", "阿里", "通用"]
+  },
+  {
+    "name": "SenseNova (商汤)",
+    "base_url": "https://token.sensenova.cn/v1",
+    "models": [
+      "deepseek-v4-flash",
+      "glm-5.2"
+    ],
+    "free_only": true,
+    "signup_url": "https://sensenova.cn/",
+    "config_url": "https://sensenova.cn/console/api-key",
+    "notes": "商汤科技 SenseNova 平台,注册送免费额度。",
+    "tags": ["免费", "商汤", "通用"]
+  },
+  {
+    "name": "Google Gemini",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "models": [
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-1.5-pro",
+      "gemini-1.5-flash"
+    ],
+    "free_only": true,
+    "signup_url": "https://aistudio.google.com/",
+    "config_url": "https://aistudio.google.com/app/apikey",
+    "notes": "Google AI Studio 免费额度充足。获取 API Key 后填入即可。注意:base_url 不同,需在 URL 后加 /openai/ 路径。",
+    "tags": ["免费", "Google", "通用"]
+  },
+  {
+    "name": "Groq",
+    "base_url": "https://api.groq.com/openai/v1",
+    "models": [
+      "llama-3.3-70b-versatile",
+      "llama-3.2-90b-vision-preview",
+      "mixtral-8x7b-32768",
+      "deepseek-r1-distill-llama-70b"
+    ],
+    "free_only": true,
+    "signup_url": "https://console.groq.com/",
+    "config_url": "https://console.groq.com/keys",
+    "notes": "Groq 提供免费推理 API,注册即送每日额度,超快推理速度。",
+    "tags": ["免费", "Groq", "快速"]
+  },
+  {
+    "name": "OpenRouter",
+    "base_url": "https://openrouter.ai/api/v1",
+    "models": [
+      "openai/gpt-4o",
+      "anthropic/claude-3.5-sonnet",
+      "google/gemini-2.0-flash-001",
+      "meta-llama/llama-3.3-70b-instruct"
+    ],
+    "free_only": false,
+    "signup_url": "https://openrouter.ai/",
+    "config_url": "https://openrouter.ai/keys",
+    "notes": "OpenRouter 聚合多家模型,付费充值后使用,支持信用卡/PayPal。",
+    "tags": ["付费", "聚合", "通用"]
+  }
+]

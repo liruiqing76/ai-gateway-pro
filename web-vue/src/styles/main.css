@@ -1,0 +1,75 @@
+/* ============================================================
+   AI 模型网关 Pro — 全局样式
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #app { height: 100%; }
+
+/* 强制暗色 */
+html.dark { color-scheme: dark; }
+html:not(.dark) { color-scheme: light; }
+html { background: #0f172a; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0f172a;
+  color: #f1f5f9;
+}
+
+/* ---- App layout ---- */
+.app-container { height: 100vh; }
+.sidebar {
+  background: #0f172a !important;
+  border-right: 1px solid #1e293b;
+  transition: width 0.3s;
+  overflow: hidden;
+}
+.logo {
+  height: 56px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #818cf8;
+  border-bottom: 1px solid #1e293b;
+  white-space: nowrap; overflow: hidden;
+}
+.logo-text { font-size: 16px; }
+.menu { border-right: none; background: transparent !important; }
+.menu .el-menu-item { height: 44px; line-height: 44px; }
+
+.header {
+  background: #111827; border-bottom: 1px solid #1e293b;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 56px;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.collapse-btn { cursor: pointer; font-size: 18px; color: #94a3b8; }
+.collapse-btn:hover { color: #818cf8; }
+.page-title { font-size: 16px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.user-name { cursor: pointer; font-size: 13px; color: #cbd5e1; display: flex; align-items: center; gap: 4px; }
+
+.main-content {
+  background: #0f172a; padding: 20px; overflow-y: auto;
+}
+
+/* ---- Page common ---- */
+.page-card { margin-bottom: 16px; }
+.card-title { font-size: 14px; font-weight: 600; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+
+/* ---- Stat cards ---- */
+.stat-icon { font-size: 24px; margin-bottom: 8px; }
+.stat-value { font-size: 24px; font-weight: 700; color: var(--el-color-primary); }
+.stat-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+/* ---- Model code ---- */
+.model-code {
+  font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px;
+  color: #818cf8; background: #1e293b; padding: 2px 8px; border-radius: 4px;
+}
+
+/* ---- Welcome ---- */
+.welcome-box {
+  background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 60%);
+  border: 1px solid #312e81; border-radius: 12px;
+  padding: 28px; text-align: center; margin-bottom: 20px;
+}
+.welcome-box h2 { color: #818cf8; font-size: 20px; margin-bottom: 8px; }
+.welcome-box p { color: #94a3b8; font-size: 13px; }

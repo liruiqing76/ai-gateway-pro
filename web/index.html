@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 模型网关 Pro</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg-card: #1a1d28;
+  --bg-hover: #242836;
+  --bg-input: #141720;
+  --border: #2a2d3a;
+  --text: #e4e6ef;
+  --text-dim: #888ca0;
+  --accent: #6366f1;
+  --accent-glow: #818cf8;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+.app { display:flex; min-height:100vh; }
+
+/* ---- Sidebar ---- */
+.sidebar {
+  width: 220px; min-width: 220px; background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  padding: 16px 0; display:flex; flex-direction:column;
+  position: sticky; top: 0; height: 100vh;
+}
+.sidebar-logo { padding: 0 16px 14px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.sidebar-logo h1 { font-size: 16px; font-weight: 700; color: var(--accent-glow); }
+.sidebar-logo span { font-size: 11px; color: var(--text-dim); }
+
+.nav-item {
+  display:flex; align-items:center; gap: 8px; padding: 8px 16px; cursor:pointer;
+  color: var(--text-dim); font-size: 13px; transition: all .15s;
+  border-left: 3px solid transparent; margin: 1px 0;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.nav-item.active { color: var(--accent-glow); border-left-color: var(--accent); background: rgba(99,102,241,.1); }
+
+.sidebar-footer { padding: 12px 16px; font-size: 11px; color: var(--text-dim); border-top: 1px solid var(--border); margin-top: auto; }
+
+/* ---- Main ---- */
+.main { flex:1; padding: 20px 28px; overflow-y:auto; }
+.page { display:none; }
+.page.active { display:block; }
+.page-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+
+/* ---- Cards ---- */
+.cards { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px; margin-bottom: 18px; }
+.card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px 18px; transition: border-color .15s;
+}
+.card:hover { border-color: var(--accent); }
+.card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.card-value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+.card-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ---- Stats row ---- */
+.stats-row { display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap; }
+.stat-box {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 18px; flex: 1; min-width: 180px; text-align: center;
+}
+.stat-box .val { font-size: 28px; font-weight: 700; }
+.stat-box .lbl { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ---- Table ---- */
+.table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow:hidden; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; padding:10px 14px; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border); background: rgba(0,0,0,.15); }
+td { padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border); }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background: var(--bg-hover); }
+
+/* ---- Badge ---- */
+.badge {
+  display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600;
+}
+.badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+.badge-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
+.badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+.badge-accent { background: rgba(99,102,241,.15); color: var(--accent-glow); }
+
+/* ---- Buttons ---- */
+.btn {
+  padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text); cursor:pointer; font-size:12px; transition: all .15s;
+}
+.btn:hover { border-color: var(--accent); background: var(--bg-hover); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-glow); }
+.btn-sm { padding: 3px 10px; font-size: 11px; }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: rgba(239,68,68,.1); }
+
+/* ---- Form ---- */
+input, select {
+  padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text); font-size: 13px; width:100%;
+  outline: none; transition: border-color .15s;
+}
+input:focus, select:focus { border-color: var(--accent); }
+.form-group { margin-bottom: 12px; }
+.form-group label { display:block; font-size:11px; color:var(--text-dim); margin-bottom:3px; text-transform:uppercase; letter-spacing:.5px; }
+.form-row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+
+/* ---- Modal ---- */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 20px; width: 440px; max-width: 90vw; max-height: 80vh; overflow-y:auto;
+}
+.modal h3 { font-size: 16px; margin-bottom: 14px; }
+.modal-actions { display:flex; gap: 8px; justify-content:flex-end; margin-top:14px; }
+
+/* ---- Toast ---- */
+.toast { position:fixed; top:16px; right:16px; padding:10px 16px; border-radius:var(--radius); font-size:13px; z-index:200; animation: slideIn .3s; }
+.toast-success { background:rgba(34,197,94,.2); border:1px solid var(--green); color:var(--green); }
+.toast-error { background:rgba(239,68,68,.2); border:1px solid var(--red); color:var(--red); }
+@keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+/* ---- Empty state ---- */
+.empty { text-align:center; padding: 32px; color:var(--text-dim); font-size:13px; }
+code { background:var(--bg-input); padding:2px 7px; border-radius:3px; font-size:12px; color:var(--accent-glow); }
+
+/* ---- Welcome ---- */
+.welcome { padding: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 18px; text-align: center; }
+.welcome h2 { font-size: 18px; color: var(--accent-glow); }
+.welcome p { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+
+/* ---- Section header ---- */
+.section-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; }
+.section-hdr h3 { font-size: 14px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>⚡ 网关 Pro</h1>
+      <span>AI 模型聚合平台</span>
+    </div>
+    <a class="nav-item active" data-page="dashboard">📊 仪表盘</a>
+    <a class="nav-item" data-page="providers">🔌 渠道管理</a>
+    <a class="nav-item" data-page="models">🤖 模型列表</a>
+    <a class="nav-item" data-page="api">🔑 API 密钥</a>
+    <a class="nav-item" data-page="billing">💳 计费中心</a>
+    <div class="sidebar-footer"><span id="user-info">未登录</span></div>
+  </nav>
+
+  <main class="main">
+    <!-- Dashboard -->
+    <div class="page active" id="page-dashboard">
+      <h2 class="page-title">仪表盘</h2>
+      <div class="welcome" id="welcome-box">
+        <h2>👋 欢迎使用 AI 模型网关 Pro</h2>
+        <p>聚合多个 AI 平台的免费额度,一个 API 调用所有模型</p>
+      </div>
+      <div class="stats-row" id="dash-stats"></div>
+      <div class="section-hdr"><h3>最近用量</h3><span id="usage-count" class="card-sub"></span></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>时间</th><th>渠道</th><th>模型</th><th>Token</th><th>状态</th></tr></thead>
+        <tbody id="usage-table"><tr><td colspan="5" class="empty">暂无调用记录</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Providers -->
+    <div class="page" id="page-providers">
+      <div class="section-hdr" style="margin-bottom:14px">
+        <h2 class="page-title" style="margin-bottom:0">渠道管理</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="openTemplateModal()">📋 一键添加</button>
+          <button class="btn btn-primary" onclick="openProviderModal()">+ 添加渠道</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>名称</th><th>URL</th><th>模型数</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="providers-table"><tr><td colspan="5" class="empty">暂无渠道,点击上方按钮添加</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Models -->
+    <div class="page" id="page-models">
+      <h2 class="page-title">可用模型</h2>
+      <div class="table-wrap">
+        <table><thead><tr><th>模型 ID</th><th>渠道</th><th>上下文</th></tr></thead>
+        <tbody id="models-table"><tr><td colspan="3" class="empty">请先添加渠道</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- API Key -->
+    <div class="page" id="page-api">
+      <h2 class="page-title">API 密钥</h2>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-label">你的 API Key</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <code style="font-size:14px;padding:6px 12px" id="api-key-display">••••••••</code>
+          <button class="btn btn-sm" onclick="copyApiKey()">复制</button>
+          <button class="btn btn-sm btn-danger" onclick="rotateApiKey()">重置</button>
+        </div>
+        <div class="card-sub" style="margin-top:6px">端点: <code>http://127.0.0.1:8765/v1</code></div>
+      </div>
+      <div class="card">
+        <div class="card-label">使用示例 (curl)</div>
+        <pre style="background:var(--bg-input);padding:12px;border-radius:var(--radius);margin-top:6px;font-size:12px;overflow-x:auto"><code>curl http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"NVIDIA-z-ai/glm-5.2","messages":[{"role":"user","content":"你好"}]}'</code></pre>
+      </div>
+    </div>
+
+    <!-- Billing -->
+    <div class="page" id="page-billing">
+      <h2 class="page-title">计费中心</h2>
+      <div class="stats-row" id="billing-stats"></div>
+      <div class="section-hdr"><h3>定价计划</h3></div>
+      <div class="cards" id="plans-cards"></div>
+      <div class="section-hdr"><h3>订单记录</h3></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>订单号</th><th>计划</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
+        <tbody id="orders-table"><tr><td colspan="5" class="empty">暂无订单</td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Provider Modal -->
+<div class="modal-overlay" id="provider-modal">
+  <div class="modal">
+    <h3 id="provider-modal-title">添加渠道</h3>
+    <form id="provider-form" onsubmit="saveProvider(event)">
+      <input type="hidden" id="prov-edit-id">
+      <div class="form-group"><label>渠道名称</label><input id="prov-name" required placeholder="如 NVIDIA"></div>
+      <div class="form-group"><label>Base URL</label><input id="prov-url" required placeholder="https://integrate.api.nvidia.com/v1"></div>
+      <div class="form-group"><label>API Key</label><input id="prov-key" required placeholder="nvapi-..." type="password"></div>
+      <div class="form-group"><label>模型列表 (逗号分隔)</label><input id="prov-models" placeholder="model-a, model-b"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('provider-modal')">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Template Modal -->
+<div class="modal-overlay" id="template-modal">
+  <div class="modal">
+    <h3>一键添加预设渠道</h3>
+    <div id="template-list" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('template-modal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+const API = '';
+let token = '';
+
+async function login() {
+  const resp = await fetch(API + '/api/auth/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email:'admin@gateway.com',password:'Admin123!'})
+  });
+  if (!resp.ok) {
+    const reg = await fetch(API + '/api/auth/register', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:'admin',email:'admin@gateway.com',password:'Admin123!'})
+    });
+    const rd = await reg.json();
+    token = rd.access_token;
+    document.getElementById('api-key-display').textContent = rd.api_key;
+    document.getElementById('user-info').textContent = `admin · ${rd.user.tier}`;
+  } else {
+    const d = await resp.json();
+    token = d.access_token;
+    document.getElementById('api-key-display').textContent = d.api_key || '';
+    document.getElementById('user-info').textContent = `admin · ${d.user.tier}`;
+  }
+}
+
+function headers() { return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
+
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + el.dataset.page).classList.add('active');
+    loadPage(el.dataset.page);
+  });
+});
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast toast-' + type; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function loadPage(page) {
+  if (!token) await login();
+  switch(page) {
+    case 'dashboard': loadDashboard(); break;
+    case 'providers': loadProviders(); break;
+    case 'models': loadModels(); break;
+    case 'api': break;
+    case 'billing': loadBilling(); break;
+  }
+}
+
+async function loadDashboard() {
+  const me = await fetch(API + '/api/billing/me', {headers:headers()}).then(r=>r.json());
+  const used = me.quota_used_today || 0;
+  const daily = me.quota_daily || 100;
+  const pct = daily > 0 ? Math.round(used/daily*100) : 0;
+  const tierLabel = me.tier === 'free' ? '🆓 免费版' : me.tier === 'pro' ? '⭐ Pro' : '🏢 企业版';
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat-box"><div class="val">${used}<span style="font-size:14px;color:var(--text-dim)">/${daily}</span></div><div class="lbl">今日调用 · ${pct}%</div></div>
+    <div class="stat-box"><div class="val">${tierLabel}</div><div class="lbl">${me.tier_expires_at ? '到期:'+new Date(me.tier_expires_at).toLocaleDateString() : '永久有效'}</div></div>
+    <div class="stat-box"><div class="val">${me.quota_reset_at ? new Date(me.quota_reset_at).toLocaleTimeString() : '00:00'}</div><div class="lbl">额度重置</div></div>
+  `;
+
+  // 用量明细 + 汇总(修复: 之前明细表永远为空)
+  try {
+    const [u, s] = await Promise.all([
+      fetch(API + '/api/usage?limit=50', {headers:headers()}).then(r=>r.json()),
+      fetch(API + '/api/usage/summary', {headers:headers()}).then(r=>r.json()),
+    ]);
+    const rows = u.data || [];
+    const tbody = document.getElementById('usage-table');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无调用记录</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td style="font-size:12px;color:var(--text-dim)">${r.time}</td>
+          <td>${r.provider}</td>
+          <td>${r.model}</td>
+          <td>${(r.tokens||0).toLocaleString()}</td>
+          <td><span class="badge ${r.success ? 'badge-green' : 'badge-red'}">${r.success ? '成功' : '失败'}</span></td>
+        </tr>`).join('');
+    }
+    const cnt = document.getElementById('usage-count');
+    if (cnt) cnt.textContent = `今日 ${s.today || 0} 次 · 共 ${s.total || rows.length} 条`;
+  } catch (e) { /* 用量读取失败不阻塞主面板 */ }
+}
+
+async function loadProviders() {
+  const resp = await fetch(API + '/api/providers', {headers:headers()});
+  const providers = await resp.json();
+  const tbody = document.getElementById('providers-table');
+  if (!providers.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无渠道,点击上方按钮添加</td></tr>'; return; }
+  tbody.innerHTML = providers.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td style="font-size:12px;color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.base_url}</td>
+      <td>${(p.models||[]).length}</td>
+      <td><span class="badge ${p.enabled ? 'badge-green' : 'badge-red'}">${p.enabled ? '启用' : '禁用'}</span></td>
+      <td>
+        <button class="btn btn-sm" onclick="editProvider(${p.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id})">删除</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function loadModels() {
+  const resp = await fetch(API + '/v1/models', {headers:headers()});
+  const data = await resp.json();
+  const tbody = document.getElementById('models-table');
+  if (!data.data || !data.data.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">请先添加渠道</td></tr>'; return; }
+  tbody.innerHTML = data.data.map(m => `
+    <tr><td><code>${m.id}</code></td><td>${m.owned_by}</td><td>${(m.context_length || 32768).toLocaleString()}</td></tr>`).join('');
+}
+
+async function loadBilling() {
+  const me = await fetch(API + '/api/billing/me', {headers:headers()}).then(r=>r.json());
+  const remain = Math.max(0, (me.quota_daily||0) - (me.quota_used_today||0));
+  document.getElementById('billing-stats').innerHTML = `
+    <div class="stat-box"><div class="val">${me.tier === 'free' ? '🆓' : me.tier === 'pro' ? '⭐' : '🏢'} ${me.tier}</div><div class="lbl">当前套餐</div></div>
+    <div class="stat-box"><div class="val">${remain}</div><div class="lbl">今日剩余额度</div></div>
+  `;
+  const plans = await fetch(API + '/api/billing/plans').then(r=>r.json());
+  document.getElementById('plans-cards').innerHTML = plans.map(p => `
+    <div class="card" style="position:relative">
+      ${p.plan === me.tier ? '<span class="badge badge-accent" style="position:absolute;top:10px;right:10px">当前</span>' : ''}
+      <div class="card-label">${p.name}</div>
+      <div class="card-value" style="font-size:20px">${p.price_cents === 0 ? '免费' : '¥' + (p.price_cents/100).toFixed(0) + '/月'}</div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-dim)">${p.features.join(' · ')}</div>
+      ${p.plan !== me.tier && p.plan !== 'free' ? `<button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="placeOrder('${p.plan}')">升级</button>` : ''}
+    </div>`).join('');
+  const orders = await fetch(API + '/api/billing/orders', {headers:headers()}).then(r=>r.json());
+  const tbody = document.getElementById('orders-table');
+  if (!orders.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无订单</td></tr>'; return; }
+  tbody.innerHTML = orders.map(o => `
+    <tr><td style="font-family:monospace;font-size:12px">${o.order_no}</td><td>${o.plan_name}</td><td>¥${(o.amount_cents/100).toFixed(2)}</td>
+    <td><span class="badge ${o.payment_status==='paid'?'badge-green':'badge-yellow'}">${o.payment_status==='paid'?'已支付':'待支付'}</span></td>
+    <td style="font-size:12px;color:var(--text-dim)">${o.created_at?new Date(o.created_at).toLocaleString():'-'}</td></tr>`).join('');
+}
+
+function openProviderModal(editId=null) {
+  document.getElementById('prov-edit-id').value = editId || '';
+  document.getElementById('provider-modal-title').textContent = editId ? '编辑渠道' : '添加渠道';
+  ['prov-name','prov-url','prov-key','prov-models'].forEach(id => document.getElementById(id).value = '');
+  if (editId) {
+    fetch(API + '/api/providers/' + editId, {headers:headers()}).then(r=>r.json()).then(p => {
+      document.getElementById('prov-name').value = p.name;
+      document.getElementById('prov-url').value = p.base_url;
+      document.getElementById('prov-key').value = p.api_key;
+      document.getElementById('prov-models').value = (p.models||[]).join(', ');
+    });
+  }
+  openModal('provider-modal');
+}
+async function editProvider(id) { openProviderModal(id); }
+async function saveProvider(e) {
+  e.preventDefault();
+  const editId = document.getElementById('prov-edit-id').value;
+  const data = {
+    name: document.getElementById('prov-name').value,
+    base_url: document.getElementById('prov-url').value,
+    api_key: document.getElementById('prov-key').value,
+    models: document.getElementById('prov-models').value.split(',').map(s=>s.trim()).filter(Boolean),
+  };
+  const resp = editId
+    ? await fetch(API + '/api/providers/' + editId, {method:'PUT',headers:headers(),body:JSON.stringify(data)})
+    : await fetch(API + '/api/providers', {method:'POST',headers:headers(),body:JSON.stringify(data)});
+  if (resp.ok) { closeModal('provider-modal'); showToast(editId ? '更新成功' : '添加成功'); loadProviders(); }
+  else { const err = await resp.json(); showToast(err.detail || '操作失败', 'error'); }
+}
+async function deleteProvider(id) {
+  if (!confirm('确定删除?')) return;
+  const resp = await fetch(API + '/api/providers/' + id, {method:'DELETE',headers:headers()});
+  if (resp.ok) { showToast('已删除'); loadProviders(); }
+  else showToast('删除失败', 'error');
+}
+
+async function openTemplateModal() {
+  const resp = await fetch(API + '/api/providers/templates/all', {headers:headers()});
+  const templates = await resp.json();
+  document.getElementById('template-list').innerHTML = templates.map(t => `
+    <div style="background:var(--bg-input);padding:10px 12px;border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div style="min-width:0">
+        <strong style="font-size:13px">${t.name}</strong>
+        <div style="font-size:11px;color:var(--text-dim)">${t.models.length} 个模型 · ${t.tags.join(' · ')}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.notes}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="applyTemplate('${t.name}')">添加</button>
+    </div>`).join('');
+  openModal('template-modal');
+}
+async function applyTemplate(name) {
+  const key = prompt('请输入 API Key (从 ' + name + ' 获取):');
+  if (!key) return;
+  const resp = await fetch(API + '/api/providers/apply-template', {
+    method:'POST', headers:headers(), body: JSON.stringify({template_name: name, api_key: key})
+  });
+  if (resp.ok) { const d = await resp.json(); showToast(d.msg); closeModal('template-modal'); loadProviders(); }
+  else { const err = await resp.json(); showToast(err.detail || '添加失败', 'error'); }
+}
+
+function copyApiKey() {
+  navigator.clipboard.writeText(document.getElementById('api-key-display').textContent);
+  showToast('已复制');
+}
+async function rotateApiKey() {
+  if (!confirm('重置后旧密钥立即失效,确定?')) return;
+  const resp = await fetch(API + '/api/auth/rotate-key', {method:'POST',headers:headers()});
+  if (resp.ok) { const d = await resp.json(); document.getElementById('api-key-display').textContent = d.api_key; showToast('已重置'); }
+  else showToast('重置失败', 'error');
+}
+async function placeOrder(plan) {
+  if (!confirm('确认升级到 ' + plan + '?')) return;
+  const resp = await fetch(API + '/api/billing/orders', {
+    method:'POST', headers:headers(), body: JSON.stringify({plan_name: plan})
+  });
+  if (resp.ok) { const d = await resp.json(); showToast('订单已创建: ' + d.order_no); loadBilling(); }
+  else { const err = await resp.json(); showToast(err.detail || '下单失败', 'error'); }
+}
+
+// 启动: 若后端尚未就绪(窗口先打开)导致登录失败, 自动重试, 避免白屏
+function bootstrap(retry = 0) {
+  login().then(() => loadDashboard()).catch(err => {
+    if (retry < 20) {
+      setTimeout(() => bootstrap(retry + 1), 1500);
+    } else {
+      document.getElementById('dash-stats').innerHTML =
+        '<div class="stat-box" style="flex:1"><div class="val" style="color:var(--red)">连接失败</div>' +
+        '<div class="lbl">请确认服务已启动 (http://127.0.0.1:8765)</div></div>';
+    }
+  });
+}
+bootstrap();
+</script>
+</body>
+</html>
