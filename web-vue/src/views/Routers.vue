@@ -26,8 +26,15 @@
 
     <el-card shadow="hover">
       <el-table :data="groups" empty-text="暂无路由组，点击上方按钮配置" v-loading="loading">
-        <el-table-column prop="name" label="组名" width="180">
+        <el-table-column prop="name" label="组名" width="160">
           <template #default="{row}"><span style="font-weight:600">🔀 {{ row.name }}</span></template>
+        </el-table-column>
+        <el-table-column label="策略" width="100" align="center">
+          <template #default="{row}">
+            <el-tag :type="row.strategy === 'fastest' ? 'success' : row.strategy === 'stable' ? 'warning' : 'info'" size="small">
+              {{ STRATEGY_LABELS[row.strategy] || row.strategy }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="100" align="center">
           <template #default="{row}">
@@ -37,7 +44,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="模型数" width="80" align="center">
+        <el-table-column label="模型数" width="70" align="center">
           <template #default="{row}">{{ (row.models || []).length }}</template>
         </el-table-column>
         <el-table-column label="模型列表" min-width="260">
@@ -57,7 +64,7 @@
     <!-- 路由配置弹窗 -->
     <el-dialog v-model="showDialog" title="🔀 路由配置" width="720px" top="5vh" destroy-on-close @open="loadData">
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <el-input v-model="newName" placeholder="路由名称 (如 quick / high_quality)" clearable style="flex:1;min-width:200px" />
+        <el-input v-model="newName" placeholder="路由名称 (如 大模型 / 小模型)" clearable style="flex:1;min-width:200px" />
         <el-button @click="autoClassify" :disabled="allOptions.length === 0">📊 自动分类</el-button>
         <el-button @click="addGroup" :disabled="!newName.trim()">+ 添加</el-button>
       </div>
@@ -66,13 +73,20 @@
       <div v-else-if="Object.keys(routersData).length === 0" style="text-align:center;padding:40px;color:var(--gw-text-tertiary)">暂无路由组，请在上方输入名称后点击"+ 添加"</div>
 
       <div v-else style="max-height:480px;overflow-y:auto">
-        <div v-for="(models, name) in routersData" :key="name" class="router-group">
+        <div v-for="(entry, name) in routersData" :key="name" class="router-group">
           <div class="router-group-header">
             <div>
               <span class="name">🔀 {{ name }}</span>
-              <span class="hint">(客户端 model 填此名称即可)</span>
+              <span class="hint">(客户端 model 填此名称)</span>
             </div>
-            <el-button size="small" text type="danger" @click="removeGroup(name)">删除</el-button>
+            <div style="display:flex;align-items:center;gap:8px">
+              <el-select v-model="routerStrategies[name]" size="small" style="width:120px" @change="onStrategyChange(name)">
+                <el-option label="质量优先" value="quality" />
+                <el-option label="最快优先" value="fastest" />
+                <el-option label="最稳优先" value="stable" />
+              </el-select>
+              <el-button size="small" text type="danger" @click="removeGroup(name)">删除</el-button>
+            </div>
           </div>
           <div v-for="opt in allOptions" :key="opt.model" class="model-option">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
@@ -99,6 +113,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
+const STRATEGY_LABELS = { quality: '质量优先', fastest: '最快优先', stable: '最稳优先' }
+
 const groups = ref([])
 const loading = ref(false)
 const checking = ref(false)
@@ -109,6 +125,7 @@ const loadingData = ref(false)
 const saving = ref(false)
 const allOptions = ref([])
 const routersData = reactive({})
+const routerStrategies = reactive({})
 const selectedMap = reactive({})
 const newName = ref('')
 
@@ -117,9 +134,11 @@ async function loadGroups() {
   try {
     const r = await api.get('/api/routers')
     const data = r.data?.data || r.data || {}
-    groups.value = Object.entries(data).map(([name, models]) => {
+    groups.value = Object.entries(data).map(([name, entry]) => {
+      const models = entry?.models || entry || []
+      const strategy = entry?.strategy || 'quality'
       const existing = groups.value.find(g => g.name === name)
-      return { name, models, available: existing?.available }
+      return { name, models, strategy, available: existing?.available }
     })
   } catch (e) {
     if (e.message !== 'Unauthorized') ElMessage.error('加载路由组失败')
@@ -169,8 +188,12 @@ async function loadData() {
     const data = r2.data?.data || r2.data || {}
     Object.keys(routersData).forEach(k => delete routersData[k])
     Object.keys(selectedMap).forEach(k => delete selectedMap[k])
-    Object.entries(data).forEach(([name, models]) => {
+    Object.keys(routerStrategies).forEach(k => delete routerStrategies[k])
+    Object.entries(data).forEach(([name, entry]) => {
+      const models = entry?.models || entry || []
+      const strategy = entry?.strategy || 'quality'
       routersData[name] = models
+      routerStrategies[name] = strategy
       selectedMap[name] = new Set(models)
     })
   } catch (e) {
@@ -188,6 +211,7 @@ function addGroup() {
     return
   }
   routersData[name] = []
+  routerStrategies[name] = 'quality'
   selectedMap[name] = new Set()
   newName.value = ''
 }
@@ -195,8 +219,13 @@ function addGroup() {
 function removeGroup(name) {
   ElMessageBox.confirm(`确定删除路由组「${name}」？`, '提示', { type: 'warning' }).then(() => {
     delete routersData[name]
+    delete routerStrategies[name]
     delete selectedMap[name]
   }).catch(() => {})
+}
+
+function onStrategyChange(name) {
+  // 策略改了即时反映
 }
 
 function toggleModel(name, model, checked) {
@@ -221,6 +250,7 @@ function autoClassify() {
   Object.entries(groups).forEach(([name, models]) => {
     if (!routersData[name]) {
       routersData[name] = []
+      routerStrategies[name] = 'quality'
       selectedMap[name] = new Set()
     }
     models.forEach(m => selectedMap[name].add(m))
@@ -233,7 +263,7 @@ async function saveAll() {
   saving.value = true
   try {
     for (const [name, models] of Object.entries(routersData)) {
-      await api.post('/api/routers', { name, models })
+      await api.post('/api/routers', { name, models, strategy: routerStrategies[name] || 'quality' })
     }
     ElMessage.success('路由组已保存')
     showDialog.value = false

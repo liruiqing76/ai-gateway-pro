@@ -62,7 +62,7 @@ def test_list_routers_empty(client):
 
 def test_create_router(client):
     """创建路由组"""
-    body = {"name": "quick", "models": ["NVIDIA-z-ai/glm-5.2"]}
+    body = {"name": "quick", "models": ["NVIDIA-z-ai/glm-5.2"], "strategy": "fastest"}
     r = client.post("/api/routers", json=body)
     assert r.status_code == 200
     # 验证能拉到
@@ -70,7 +70,13 @@ def test_create_router(client):
     data = r2.json()
     routers = data.get("data", data) if isinstance(data, dict) else data
     assert "quick" in routers
-    assert "NVIDIA-z-ai/glm-5.2" in routers["quick"]
+    # 返回结构: {models: [...], strategy: "..."}
+    entry = routers["quick"]
+    if isinstance(entry, dict):
+        assert "NVIDIA-z-ai/glm-5.2" in entry["models"]
+        assert entry["strategy"] == "fastest"
+    else:
+        assert "NVIDIA-z-ai/glm-5.2" in entry
 
 
 def test_update_router(client):
@@ -81,7 +87,11 @@ def test_update_router(client):
     r = client.get("/api/routers")
     data = r.json()
     routers = data.get("data", data) if isinstance(data, dict) else data
-    assert "NVIDIA-z-ai/glm-5.2" in routers["vision"]
+    entry = routers["vision"]
+    if isinstance(entry, dict):
+        assert "NVIDIA-z-ai/glm-5.2" in entry["models"]
+    else:
+        assert "NVIDIA-z-ai/glm-5.2" in entry
 
 
 def test_delete_router(client):

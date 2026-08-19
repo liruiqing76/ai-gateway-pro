@@ -22,37 +22,41 @@ async def list_routers(user: User = Depends(get_current_user_from_jwt)):
     session = get_session()
     try:
         rows = session.query(Router).filter_by(user_id=user.id).all()
-        data = {r.name: r.models or [] for r in rows}
+        data = {r.name: {"models": r.models or [], "strategy": r.strategy or "quality"} for r in rows}
         return {"data": data}
     finally:
         session.close()
 
 
 @router.post("")
+@router.post("")
 async def save_router(request: Request, user: User = Depends(get_current_user_from_jwt)):
     """创建或更新一个路由组"""
     body = await request.json()
     name = body.get("name", "").strip()
     models = body.get("models", [])
+    strategy = body.get("strategy", "quality").strip()
 
     if not name:
         raise HTTPException(400, "路由名称必填")
     if not isinstance(models, list):
         raise HTTPException(400, "models 必须是数组")
+    if strategy not in ("quality", "fastest", "stable"):
+        raise HTTPException(400, "strategy 必须是 quality/fastest/stable 之一")
 
     session = get_session()
     try:
         existing = session.query(Router).filter_by(user_id=user.id, name=name).first()
         if existing:
             existing.models = models
+            existing.strategy = strategy
         else:
-            r = Router(user_id=user.id, name=name, models=models, strategy="quality")
+            r = Router(user_id=user.id, name=name, models=models, strategy=strategy)
             session.add(r)
         session.commit()
-        return {"ok": True, "name": name, "models": models}
+        return {"ok": True, "name": name, "models": models, "strategy": strategy}
     finally:
         session.close()
-
 
 @router.delete("/{name}")
 async def delete_router(name: str, user: User = Depends(get_current_user_from_jwt)):

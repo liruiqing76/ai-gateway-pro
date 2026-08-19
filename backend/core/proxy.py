@@ -27,6 +27,7 @@ def pick_available_models(
     requested_model: str | None = None,
     routers: dict | None = None,
     force: bool = False,
+    strategy: str = "quality",
 ) -> list[tuple[Provider, str]]:
     """
     返回按质量排序的候选 (provider, model) 列表。
@@ -78,9 +79,8 @@ def pick_available_models(
                         fallback.append((p, m, k))
         if not raw:
             raw = fallback
-        import random
-        random.shuffle(raw)
-        return [(p, m) for p, m, _ in raw]
+        scored = _sort_by_strategy(raw, strategy)
+        return [(p, m) for p, m, _ in scored]
 
     # 2. 具体模型
     for p in providers:
@@ -108,7 +108,7 @@ def pick_available_models(
         )
         for p, m, k in raw
     ]
-    scored.sort(key=lambda x: (-x[0], x[1]))
+    scored = _sort_by_strategy(raw, strategy)
     return [(p, m) for _, _, p, m in scored]
 
 
@@ -278,6 +278,38 @@ CONTEXT_LIMITS: dict[str, int] = {
 
 def get_context_length(model: str) -> int:
     return CONTEXT_LIMITS.get(model, 32768)
+
+
+
+
+
+def _sort_by_strategy(
+    raw: list,
+    strategy: str = "quality",
+) -> list:
+    """按策略排序候选列表: quality / fastest / stable"""
+    from backend.core.scheduler import quality_tracker
+    from backend.core.circuit import circuit_breaker
+
+    # 收集每个候选的分数
+    scored = []
+    for p, m, k in raw:
+        score = quality_tracker.get_score(k)
+        latency = quality_tracker.get_avg_latency(k) or 1e9
+        is_open = circuit_breaker.is_open(k)
+        scored.append((p, m, k, score, latency, is_open))
+
+    if strategy == "fastest":
+        # 延迟最低优先, 熔断中的最后
+        scored.sort(key=lambda x: (1 if x[5] else 0, x[4]))
+    elif strategy == "stable":
+        # 成功率最高优先, 同分按延迟
+        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4]))
+    else:  # quality (默认)
+        # 质量分最高优先, 同分按延迟
+        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4]))
+
+    return [(p, m, k) for p, m, k, _, _, _ in scored]
 
 
 def is_1m_model(model: str) -> bool:

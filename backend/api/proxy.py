@@ -64,6 +64,7 @@ async def proxy_chat(
         # 路由组(用户自定义)
         router_rows = session.query(Router).filter_by(user_id=user.id).all()
         routers = {r.name: r.models for r in router_rows}
+        router_strategies = {r.name: (r.strategy or "quality") for r in router_rows}
 
         # 自动 1M 路由组
         one_m = [f"{p.name}-{m}" for p in providers
@@ -160,7 +161,8 @@ async def proxy_chat(
 
         return JSONResponse(content=orch_result)
 
-    candidates = pick_available_models(providers, requested_model, routers)
+    _strat = router_strategies.get(requested_model, "quality") if requested_model else "quality"
+    candidates = pick_available_models(providers, requested_model, routers, strategy=_strat)
     if not candidates:
         raise HTTPException(503, f"无可用的模型: {requested_model or '任意'}")
 

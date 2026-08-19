@@ -88,6 +88,10 @@ class QualityTracker:
         if key in self._data:
             del self._data[key]
 
+    def reset_all(self) -> None:
+        """清空所有记录(测试用)"""
+        self._data.clear()
+
 
 # ============================================================
 # 全局质量追踪器
