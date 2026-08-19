@@ -137,16 +137,16 @@ async def forward_non_stream(
     try:
         start = time.time()
         resp = await http_client.post(
-            url, json=req_body, headers=headers, timeout=120
+            url, json=req_body, headers=headers, timeout=settings.PROXY_TIMEOUT_SECONDS
         )
         latency = (time.time() - start) * 1000
 
         if resp.status_code >= 400:
             logger.warning("upstream %d from %s: %s", resp.status_code, provider.name, resp.text[:200])
-            # 429/限流 → 直接熔断,让后续请求快失败
+            # 429/限流 → 冷却(指数退避)
+            # 429/限流 → 冷却(指数退避)
             if resp.status_code == 429:
-                circuit_breaker.force_open(key)
-            else:
+                circuit_breaker.record_rate_limit(key)
                 circuit_breaker.record_fail(key)
             quality_tracker.record(key, "fail", latency)
             return None, f"upstream {resp.status_code}"

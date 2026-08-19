@@ -22,6 +22,7 @@ from backend.core.proxy import (
 )
 from backend.core.circuit import circuit_breaker
 from backend.core.scheduler import quality_tracker
+from backend.core.orchestrate import parse_pipeline, run_relay, run_review
 from backend.models import get_session, User, Provider, Router, UsageLog
 
 logger = logging.getLogger("gateway.proxy")
@@ -92,6 +93,73 @@ async def proxy_chat(
             decrypted[p.id] = ""
 
     # 候选模型
+    # ---- 多模型编排: relay:组/组 review:主/审 ----
+    pipeline = parse_pipeline(requested_model)
+    if pipeline and not stream:
+        mode, stages = pipeline
+        if mode == "relay":
+            max_attempts = len(stages)
+        else:
+            max_attempts = 2
+
+        from backend.core.orchestrate import _get_prompt
+        if not _get_prompt(body):
+            raise HTTPException(400, "编排请求需要 user 消息")
+
+        client_orch = await get_http_client()
+
+        async def stage_forward(stage: str, stage_body: dict):
+            """按 stage 名(路由组/模型名)找候选并转发, 返回响应或 None"""
+            cands = pick_available_models(providers, stage, routers)
+            if not cands:
+                return None
+            for prov, mdl in cands:
+                key_api = decrypted.get(prov.id, "")
+                if not key_api:
+                    continue
+                resp_ns, _err = await forward_non_stream(client_orch, prov, key_api, mdl, stage_body)
+                if resp_ns is not None:
+                    choices_c = resp_ns.get("choices")
+                    if not choices_c:
+                        continue
+                    return resp_ns
+            return None
+
+        if mode == "relay":
+            orch_result = await run_relay(stages, body, stage_forward, requested_model)
+        else:
+            orch_result = await run_review(stages, body, stage_forward, requested_model)
+
+        if orch_result is None:
+            raise HTTPException(502, "编排执行失败: 所有阶段均无可用模型")
+
+        # 记录用量(取第一段 usage 或汇总)
+        usage = orch_result.get("usage") or {}
+        pt = usage.get("prompt_tokens", 0) or 0
+        ct = usage.get("completion_tokens", 0) or 0
+        try:
+            session = get_session()
+            try:
+                log = UsageLog(
+                    user_id=user.id,
+                    provider_name="orchestrate",
+                    model_name=requested_model,
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    total_tokens=pt + ct,
+                    success=True,
+                )
+                session.add(log)
+                user.quota_used_today = (user.quota_used_today or 0) + 1
+                session.merge(user)
+                session.commit()
+            finally:
+                session.close()
+        except Exception:
+            logger.exception("orchestrate usage log failed")
+
+        return JSONResponse(content=orch_result)
+
     candidates = pick_available_models(providers, requested_model, routers)
     if not candidates:
         raise HTTPException(503, f"无可用的模型: {requested_model or '任意'}")
@@ -131,6 +199,13 @@ async def proxy_chat(
         # 非流式
         resp, err = await forward_non_stream(client, provider, api_key, model, body)
         if resp is not None:
+            # 防护: 上游返回 200 但 choices=null(魔搭在小 max_tokens 时会这样)
+            choices = resp.get("choices")
+            if not choices:
+                logger.warning("upstream %s returned empty choices for %s, trying next", provider.name, model)
+                circuit_breaker.record_fail(f"{provider.name}||{model}")
+                last_err = f"empty choices from {provider.name}"
+                continue
             # 记录用量
             usage = resp.get("usage") or {}
             pt = usage.get("prompt_tokens", 0) or 0

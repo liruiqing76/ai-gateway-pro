@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     QUALITY_WINDOW: int = 20
     POLL_INTERVAL: int = 300
     MAX_CONCURRENT_POLLS: int = 10
+    # 代理转发超时(秒) — 每个上游模型尝试的最长时间
+    PROXY_TIMEOUT_SECONDS: int = 20
 
     # ---- 自动签到 ----
     CHECKIN_ENABLED: bool = True

@@ -18,6 +18,7 @@ class CircuitState:
         self.open_until = 0.0      # 熔断打开截止时间
         self.last_fail_at = 0.0
         self.last_success_at = 0.0
+        self.rate_limit_count = 0
 
 
 class CircuitBreaker:
@@ -70,6 +71,7 @@ class CircuitBreaker:
         """记录一次成功,重置失败计数"""
         st = self._get(key)
         st.fails = 0
+        st.rate_limit_count = 0
         st.last_success_at = time.time()
         # 如果熔断到期,自然恢复
         st.open_until = 0.0
@@ -79,6 +81,16 @@ class CircuitBreaker:
         st = self._get(key)
         st.fails = self.fail_threshold  # 标记为触发了熔断
         st.open_until = time.time() + (duration or self.recovery_seconds)
+        st.last_fail_at = time.time()
+
+    def record_rate_limit(self, key: str) -> None:
+        """记录 429 限流, 指数退避冷却: 30s→60s→120s→...→300s max"""
+        st = self._get(key)
+        st.rate_limit_count += 1
+        # 指数退避: base=30s, *2^count, max=300s
+        backoff = min(30 * (2 ** (st.rate_limit_count - 1)), 300)
+        st.fails = self.fail_threshold  # 触发熔断
+        st.open_until = time.time() + backoff
         st.last_fail_at = time.time()
 
     def reset(self, key: str) -> None:
