@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================
-# AI 模型网关 Pro — 桌面客户端
+# 智能网关 — 桌面客户端
 # pywebview 壳 + 内嵌 FastAPI + 自动签到
 # ============================================================
 import os
@@ -170,7 +170,7 @@ class SettingsAPI:
         """Windows 开机自启快捷方式路径"""
         import winshell
         folder = winshell.startup()
-        name = "AI模型网关Pro" + (".lnk" if getattr(sys, "frozen", False) else "")
+        name = "智能网关" + (".lnk" if getattr(sys, "frozen", False) else "")
         return Path(folder) / name
 
     def set_auto_start(self, enabled: str) -> str:
@@ -258,7 +258,7 @@ def main():
     checkin_api = CheckinAPI(_scheduler)
     settings_api = SettingsAPI()
     window = webview.create_window(
-        "⚡ AI 模型网关 Pro v0.1.0",   # 加版本号, 便于在任务栏/Alt+Tab 识别
+        "⚡ 智能网关 v0.1.0",   # 加版本号, 便于在任务栏/Alt+Tab 识别
         url,
         width=1200,
         height=800,

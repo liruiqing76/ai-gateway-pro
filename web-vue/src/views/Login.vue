@@ -1,12 +1,10 @@
 <template>
   <div class="login-page">
-    <el-card class="login-card">
-      <template #header>
-        <div style="text-align:center">
-          <h2 style="margin:0">⚡ AI 模型网关 Pro</h2>
-          <p style="font-size:12px;color:#94a3b8;margin:6px 0 0">聚合免费额度 · 一个 API 调所有模型</p>
-        </div>
-      </template>
+    <div class="login-card">
+      <h2 style="text-align:center;margin:0 0 4px;font-size:22px;font-weight:700">⚡ 智能网关</h2>
+      <p style="text-align:center;font-size:13px;color:var(--gw-text-secondary);margin-bottom:28px">
+        聚合免费额度 · 一个 API 调所有模型
+      </p>
 
       <el-form :model="form" label-position="top" @submit.prevent>
         <el-form-item label="邮箱">
@@ -18,17 +16,17 @@
         <el-form-item label="密码">
           <el-input v-model="form.password" type="password" placeholder="至少 8 位，含大小写+数字+符号" show-password />
         </el-form-item>
-        <el-button type="primary" style="width:100%" @click="submit" :loading="loading">
+        <el-button type="primary" style="width:100%;height:40px" @click="submit" :loading="loading">
           {{ mode === 'login' ? '登 录' : '注 册' }}
         </el-button>
-        <div style="text-align:center;margin-top:12px;font-size:13px">
-          <span style="color:#94a3b8">{{ mode === 'login' ? '还没有账号?' : '已有账号?' }}</span>
-          <el-link type="primary" style="margin-left:6px" @click="switchMode">
+        <div style="text-align:center;margin-top:16px;font-size:13px">
+          <span style="color:var(--gw-text-secondary)">{{ mode === 'login' ? '还没有账号?' : '已有账号?' }}</span>
+          <el-link type="primary" style="margin-left:4px" @click="switchMode">
             {{ mode === 'login' ? '去注册' : '去登录' }}
           </el-link>
         </div>
       </el-form>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -64,8 +62,8 @@ async function submit() {
     localStorage.setItem('gw_token', resp.data.access_token)
     localStorage.setItem('gw_api_key', resp.data.api_key || '')
     localStorage.setItem('gw_username', resp.data.user?.username || form.value.email)
+    localStorage.setItem('gw_email', form.value.email)
     ElMessage.success(mode.value === 'login' ? '登录成功' : '注册成功')
-    // 回到仪表盘
     window.location.hash = '#/dashboard'
     window.location.reload()
   } catch (e) {
@@ -77,7 +75,16 @@ async function submit() {
 <style scoped>
 .login-page {
   display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; background: #0f172a;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f5f7 0%, #e8ecf4 50%, #f0f4ff 100%);
 }
-.login-card { width: 380px; }
+.login-card {
+  width: 400px;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+  padding: 36px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.08);
+}
 </style>

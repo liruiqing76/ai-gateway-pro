@@ -48,7 +48,7 @@
           />
         </el-form-item>
         <el-form-item label="下次执行">
-          <div style="font-size:13px;color:#94a3b8">
+          <div style="font-size:13px;color:var(--gw-text-secondary)">
             WorkBuddy: {{ schedule.next_run?.workbuddy ? formatTime(schedule.next_run.workbuddy) : '—' }} &nbsp;·&nbsp;
             Trae: {{ schedule.next_run?.trae ? formatTime(schedule.next_run.trae) : '—' }}
           </div>
@@ -69,7 +69,7 @@
               <el-tag :type="wb.signed ? 'success' : 'info'" size="small">{{ wb.signed ? '今日已签' : '未签到' }}</el-tag>
             </div>
           </template>
-          <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">
+          <div style="font-size:13px;color:var(--gw-text-secondary);margin-bottom:12px">
             最后签到: {{ wb.date || '从未' }}
           </div>
           <el-button type="primary" :loading="running === 'workbuddy'" @click="run('workbuddy')" :disabled="wb.signed">
@@ -87,7 +87,7 @@
               <el-tag :type="trae.signed ? 'success' : 'info'" size="small">{{ trae.signed ? '今日已签' : '未签到' }}</el-tag>
             </div>
           </template>
-          <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">
+          <div style="font-size:13px;color:var(--gw-text-secondary);margin-bottom:12px">
             最后签到: {{ trae.date || '从未' }}
           </div>
           <el-button type="primary" :loading="running === 'trae'" @click="run('trae')" :disabled="trae.signed">
@@ -99,7 +99,7 @@
 
     <el-card shadow="hover" v-if="log">
       <template #header><span class="card-title">签到日志</span></template>
-      <pre style="background:#1e293b;padding:14px;border-radius:8px;font-size:12px;max-height:300px;overflow-y:auto;color:#cbd5e1;white-space:pre-wrap">{{ log }}</pre>
+      <pre style="background:var(--gw-surface-secondary);padding:14px;border-radius:8px;font-size:12px;max-height:300px;overflow-y:auto;color:#cbd5e1;white-space:pre-wrap">{{ log }}</pre>
     </el-card>
   </div>
 </template>

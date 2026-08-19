@@ -26,7 +26,7 @@
           <el-tag v-if="p.plan === currentTier" type="primary" size="small" style="position:absolute;top:12px;right:12px">当前</el-tag>
           <div class="stat-icon">{{ p.plan === 'free' ? '🆓' : p.plan === 'pro' ? '⭐' : '🏢' }}</div>
           <div style="font-size:20px;font-weight:700;margin:8px 0">{{ p.price_cents === 0 ? '免费' : '¥' + (p.price_cents / 100).toFixed(0) + '/月' }}</div>
-          <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">{{ p.features.join(' · ') }}</div>
+          <div style="font-size:12px;color:var(--gw-text-secondary);margin-bottom:12px">{{ p.features.join(' · ') }}</div>
           <el-button v-if="p.plan !== currentTier && p.plan !== 'free'" type="primary" size="small" @click="placeOrder(p.plan)">升级</el-button>
         </el-card>
       </el-col>

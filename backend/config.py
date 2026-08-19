@@ -1,5 +1,5 @@
 # ============================================================
-# AI 模型网关 Pro — 配置(pydantic-settings)
+# 智能网关 — 配置(pydantic-settings)
 # 所有配置项可通过环境变量覆盖,格式: GW_<KEY>
 # ============================================================
 
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     }
 
     # ---- 应用 ----
-    APP_NAME: str = "AI 模型网关 Pro"
+    APP_NAME: str = "智能网关"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     HOST: str = "127.0.0.1"

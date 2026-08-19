@@ -1,5 +1,5 @@
 # ============================================================
-# AI 模型网关 Pro — 主应用入口
+# 智能网关 — 主应用入口
 # ============================================================
 
 import logging
@@ -23,6 +23,7 @@ from backend.api.providers import router as providers_router
 from backend.api.proxy import router as proxy_router
 from backend.billing.routes import router as billing_router
 from backend.api.routers import router as routers_router
+from backend.api.router_check import router as check_router
 from backend.api.usage import router as usage_router
 
 # 日志
@@ -38,9 +39,9 @@ logger = logging.getLogger("gateway")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """启动/关闭钩子"""
-    logger.info("AI 模型网关 Pro 启动中...")
+    logger.info("智能网关 启动中...")
     yield
-    logger.info("AI 模型网关 Pro 已停止")
+    logger.info("智能网关 已停止")
 
 # ============================================================
 # FastAPI 应用
@@ -63,6 +64,8 @@ app.add_middleware(
 # 静态文件
 WEB_DIR = Path(__file__).parent.parent / "web"
 if WEB_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(WEB_DIR / "assets")), name="assets")
+    app.mount("/favicon.svg", StaticFiles(directory=str(WEB_DIR), html=True), name="favicon")
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 # 路由注册
@@ -71,6 +74,7 @@ app.include_router(providers_router)
 app.include_router(proxy_router)
 app.include_router(billing_router)
 app.include_router(routers_router)
+app.include_router(check_router)
 app.include_router(usage_router)
 
 

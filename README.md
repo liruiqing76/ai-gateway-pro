@@ -1,6 +1,6 @@
-# AI 模型网关 Pro
+# 智能网关
 
-AI 模型网关桌面客户端 — 管理多渠道模型，统一 OpenAI 兼容接口，支持路由组、熔断、Fallback、自动签到。
+智能网关桌面客户端 — 管理多渠道模型，统一 OpenAI 兼容接口，支持路由组、熔断、Fallback、自动签到。
 
 ## 功能
 
@@ -50,7 +50,7 @@ pip install pyinstaller
 pyinstaller ai_gateway_pro.spec
 ```
 
-输出在 `dist/AI模型网关Pro.exe`，双击运行。
+输出在 `dist/智能网关.exe`，双击运行。
 
 ## 常见问题：桌面版窗口白屏 / 无界面
 

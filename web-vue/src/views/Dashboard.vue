@@ -1,38 +1,44 @@
 <template>
   <div>
     <div class="welcome-box">
-      <h2>👋 欢迎使用 AI 模型网关 Pro</h2>
+      <h2>👋 欢迎使用 智能网关</h2>
       <p>聚合多个 AI 平台的免费额度，一个 API 调用所有模型</p>
     </div>
 
     <el-row :gutter="16" style="margin-bottom:20px">
       <el-col :span="8">
-        <el-card shadow="hover" class="page-card">
-          <div class="stat-icon">📊</div>
-          <div class="stat-value">{{ stats.used }} <span style="font-size:14px;color:#94a3b8">/ {{ stats.daily }}</span></div>
-          <div class="stat-label">今日调用 · {{ stats.pct }}%</div>
+        <el-card shadow="hover">
+          <div class="stat-card">
+            <div class="icon">📊</div>
+            <div class="value">{{ stats.used }} <span style="font-size:14px;color:var(--gw-text-secondary)">/ {{ stats.daily }}</span></div>
+            <div class="label">今日调用 · {{ stats.pct }}%</div>
+          </div>
         </el-card>
       </el-col>
       <el-col :span="8">
-        <el-card shadow="hover" class="page-card">
-          <div class="stat-icon">⭐</div>
-          <div class="stat-value">{{ stats.tierLabel }}</div>
-          <div class="stat-label">{{ stats.tierExpires }}</div>
+        <el-card shadow="hover">
+          <div class="stat-card">
+            <div class="icon">⭐</div>
+            <div class="value" style="font-size:20px">{{ stats.tierLabel }}</div>
+            <div class="label">{{ stats.tierExpires }}</div>
+          </div>
         </el-card>
       </el-col>
       <el-col :span="8">
-        <el-card shadow="hover" class="page-card">
-          <div class="stat-icon">🕐</div>
-          <div class="stat-value">{{ stats.resetTime }}</div>
-          <div class="stat-label">额度重置</div>
+        <el-card shadow="hover">
+          <div class="stat-card">
+            <div class="icon">🕐</div>
+            <div class="value" style="font-size:20px">{{ stats.resetTime }}</div>
+            <div class="label">额度重置</div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
 
     <el-card shadow="hover">
       <template #header>
-        <span class="card-title">最近用量</span>
-        <span class="card-sub" v-if="usageList.length">共 {{ usageList.length }} 条 · 今日 {{ usageSummary.today }} 次</span>
+        <span style="font-size:14px;font-weight:600">最近用量</span>
+        <span v-if="usageList.length" style="float:right;font-size:12px;color:var(--gw-text-secondary)">共 {{ usageList.length }} 条 · 今日 {{ usageSummary.today }} 次</span>
       </template>
       <el-table :data="usageList" empty-text="暂无调用记录" v-loading="loading">
         <el-table-column prop="time" label="时间" width="170" />
@@ -43,7 +49,7 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag>
+            <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '成功' : '失败' }}</el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -75,7 +81,6 @@ onMounted(async () => {
     }
   } catch (e) { /* login first */ }
 
-  // 读取用量明细 + 汇总(修复: 之前明细表永远为空)
   try {
     const [listResp, sumResp] = await Promise.all([
       api.get('/api/usage?limit=50'),
@@ -86,12 +91,3 @@ onMounted(async () => {
   } catch (e) { /* usage 读取失败不阻塞主面板 */ }
 })
 </script>
-
-<style scoped>
-.card-sub {
-  float: right;
-  font-size: 13px;
-  font-weight: normal;
-  color: #94a3b8;
-}
-</style>

@@ -9,14 +9,14 @@
         <el-button @click="copy">复制</el-button>
         <el-button type="danger" @click="rotate">重置</el-button>
       </div>
-      <div style="margin-top:10px;font-size:12px;color:#94a3b8">
+      <div style="margin-top:10px;font-size:12px;color:var(--gw-text-secondary)">
         端点: <code class="model-code">http://127.0.0.1:8765/v1</code>
       </div>
     </el-card>
 
     <el-card shadow="hover">
       <template #header><span class="card-title">使用示例 (curl)</span></template>
-      <pre style="background:#1e293b;padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;color:#cbd5e1"><code>curl http://127.0.0.1:8765/v1/chat/completions \
+      <pre style="background:var(--gw-surface-secondary);padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;color:#cbd5e1"><code>curl http://127.0.0.1:8765/v1/chat/completions \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"NVIDIA-z-ai/glm-5.2","messages":[{"role":"user","content":"你好"}]}'</code></pre>

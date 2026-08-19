@@ -63,19 +63,20 @@ class TestProviderCRUD:
 
     def test_duplicate_provider_name(self, auth_headers):
         client.post("/api/providers", json={
-            "name": "Dup", "base_url": "https://a.com", "api_key": "key1"
+            "name": "Dup", "base_url": "https://a.com", "api_key": "key1",
+            "auto_fetch": False,
         }, headers=auth_headers)
         resp = client.post("/api/providers", json={
-            "name": "Dup", "base_url": "https://b.com", "api_key": "key2"
+            "name": "Dup", "base_url": "https://b.com", "api_key": "key2",
+            "auto_fetch": False,
         }, headers=auth_headers)
         assert resp.status_code == 400
 
     def test_list_providers(self, auth_headers):
-        # 建两个渠道
         for i in range(2):
             client.post("/api/providers", json={
                 "name": f"Provider{i}", "base_url": f"https://p{i}.com",
-                "api_key": f"key{i}"
+                "api_key": f"key{i}", "auto_fetch": False,
             }, headers=auth_headers)
         resp = client.get("/api/providers", headers=auth_headers)
         assert resp.status_code == 200
@@ -84,7 +85,8 @@ class TestProviderCRUD:
     def test_get_provider_decrypts_key(self, auth_headers):
         resp = client.post("/api/providers", json={
             "name": "SecretStore", "base_url": "https://s.com",
-            "api_key": "SDKJFLSJDFLSJF-super-secret"
+            "api_key": "SDKJFLSJDFLSJF-super-secret",
+            "auto_fetch": False,
         }, headers=auth_headers)
         pid = resp.json()["id"]
         resp = client.get(f"/api/providers/{pid}", headers=auth_headers)
@@ -96,7 +98,8 @@ class TestProviderCRUD:
         import backend.models
         from backend.models import get_session, Provider
         client.post("/api/providers", json={
-            "name": "Encrypted", "base_url": "https://e.com", "api_key": "PLAIN-TEXT-KEY"
+            "name": "Encrypted", "base_url": "https://e.com",
+            "api_key": "PLAIN-TEXT-KEY", "auto_fetch": False,
         }, headers=auth_headers)
         session = get_session()
         try:
@@ -117,37 +120,35 @@ class TestProviderCRUD:
             "enabled": False,
         }, headers=auth_headers)
         assert resp.status_code == 200
-        # 验证更新结果
         resp = client.get(f"/api/providers/{pid}", headers=auth_headers)
         assert resp.json()["base_url"] == "https://new.com"
         assert resp.json()["enabled"] is False
 
     def test_delete_provider(self, auth_headers):
         resp = client.post("/api/providers", json={
-            "name": "ToDelete", "base_url": "https://d.com", "api_key": "key"
+            "name": "ToDelete", "base_url": "https://d.com",
+            "api_key": "key", "auto_fetch": False,
         }, headers=auth_headers)
         pid = resp.json()["id"]
         resp = client.delete(f"/api/providers/{pid}", headers=auth_headers)
         assert resp.status_code == 200
-        # 已删除
         resp = client.get(f"/api/providers/{pid}", headers=auth_headers)
         assert resp.status_code == 404
 
     def test_cannot_access_other_users_provider(self, auth_headers):
         """多租户隔离:用户 A 建渠道,用户 B 不能访问"""
         resp = client.post("/api/providers", json={
-            "name": "Isolation", "base_url": "https://iso.com", "api_key": "secret"
+            "name": "Isolation", "base_url": "https://iso.com",
+            "api_key": "secret", "auto_fetch": False,
         }, headers=auth_headers)
         pid = resp.json()["id"]
 
-        # 注册用户 B
         resp2 = client.post("/api/auth/register", json={
             "username": "userb", "email": "userb@example.com", "password": "Test1234!"
         })
         token_b = resp2.json()["access_token"]
         headers_b = {"Authorization": f"Bearer {token_b}"}
 
-        # B 访问 A 的渠道 → 404(隔离)
         resp3 = client.get(f"/api/providers/{pid}", headers=headers_b)
         assert resp3.status_code == 404
 
@@ -157,7 +158,7 @@ class TestTemplates:
         resp = client.get("/api/providers/templates/all", headers=auth_headers)
         assert resp.status_code == 200
         templates = resp.json()
-        assert len(templates) >= 4  # 至少 4 个预设
+        assert len(templates) >= 4
         assert any(t["name"] == "NVIDIA" for t in templates)
         assert any(t["name"] == "魔搭 (ModelScope)" for t in templates)
 
