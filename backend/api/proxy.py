@@ -27,6 +27,9 @@ from backend.core.orchestrate import (
     run_relay_stream, run_review_stream,
 )
 from backend.core.trace import TraceContext, save_trace
+from backend.core.chat_log import (
+    extract_prompt_text, extract_completion_text, save_chat_log, StreamRecorder,
+)
 from backend.core.router_group import classify_model
 from backend.core import vision
 from backend.core.orchestrate import _extract_text
@@ -204,6 +207,9 @@ async def proxy_chat(
     requested_model = body.get("model")
     stream = body.get("stream", False)
 
+    # 输入全文(用于聊天记录; 失败也不阻断)
+    prompt_text = extract_prompt_text(body)
+
     # 初始化链路追踪
     trace = TraceContext(user_id=user.id, original_model=requested_model or "", is_stream=stream)
 
@@ -331,8 +337,16 @@ async def proxy_chat(
                 trace.mark_selected("orchestrate", requested_model, f"pipeline stream ok")
                 trace.finish()
                 save_trace(trace)
+                rec = StreamRecorder(
+                    user_id=user.id, original_model=requested_model or "",
+                    prompt_text=prompt_text, provider_name="orchestrate",
+                    model_name=requested_model or "",
+                    request_id=trace.request_id,
+                    is_pipeline=True, pipeline_mode=mode,
+                    start_time=trace._start_time,
+                )
                 return StreamingResponse(
-                    _safe_orchestrate_gen(orch_gen),
+                    rec.record(_safe_orchestrate_gen(orch_gen)),
                     media_type="text/event-stream",
                     headers={"X-Pipeline": requested_model},
                 )
@@ -340,6 +354,13 @@ async def proxy_chat(
             trace.mark_error(orch_err)
             trace.finish()
             save_trace(trace)
+            save_chat_log(
+                user_id=user.id, original_model=requested_model or "",
+                prompt_text=prompt_text, success=False,
+                error_msg=str(orch_err), is_stream=True,
+                is_pipeline=True, pipeline_mode=mode,
+                latency_ms=trace.latency_ms,
+            )
             raise HTTPException(502, f"流式编排失败: {orch_err}")
         else:
             # 非流式编排
@@ -352,6 +373,13 @@ async def proxy_chat(
                 trace.mark_error("所有阶段均无可用模型")
                 trace.finish()
                 save_trace(trace)
+                save_chat_log(
+                    user_id=user.id, original_model=requested_model or "",
+                    prompt_text=prompt_text, success=False,
+                    error_msg="所有阶段均无可用模型",
+                    is_pipeline=True, pipeline_mode=mode,
+                    latency_ms=trace.latency_ms,
+                )
                 raise HTTPException(502, "编排执行失败: 所有阶段均无可用模型")
 
             # 记录用量
@@ -362,6 +390,15 @@ async def proxy_chat(
             trace.mark_selected("orchestrate", requested_model, f"pipeline non-stream ok")
             trace.finish()
             save_trace(trace)
+            save_chat_log(
+                user_id=user.id, original_model=requested_model or "",
+                provider_name="orchestrate", model_name=requested_model or "",
+                prompt_text=prompt_text,
+                completion_text=extract_completion_text(orch_result),
+                prompt_tokens=pt, completion_tokens=ct,
+                is_pipeline=True, pipeline_mode=mode,
+                latency_ms=trace.latency_ms,
+            )
 
             try:
                 session = get_session()
@@ -394,18 +431,54 @@ async def proxy_chat(
             routers, router_strategies, user_aliases, decrypted, trace,
         )
         if err == "no_vision":
+            save_chat_log(user_id=user.id, original_model=requested_model or "",
+                          prompt_text=prompt_text, success=False,
+                          error_msg="无可用视觉模型", is_stream=stream)
             raise HTTPException(400, "检测到图片输入，但当前没有可用的视觉模型，请先在路由组配置 vision 组")
         if err == "vision_failed":
+            save_chat_log(user_id=user.id, original_model=requested_model or "",
+                          prompt_text=prompt_text, success=False,
+                          error_msg="视觉识别失败", is_stream=stream,
+                          is_pipeline=True, pipeline_mode="auto-vision")
             raise HTTPException(502, "视觉识别失败")
         if err == "no_text_model":
+            save_chat_log(user_id=user.id, original_model=requested_model or "",
+                          prompt_text=prompt_text, success=False,
+                          error_msg="原文本模型无可用候选", is_stream=stream,
+                          is_pipeline=True, pipeline_mode="auto-vision")
             raise HTTPException(502, "原文本模型无可用候选")
         if err == "text_failed":
+            save_chat_log(user_id=user.id, original_model=requested_model or "",
+                          prompt_text=prompt_text, success=False,
+                          error_msg="文本模型调用失败", is_stream=stream,
+                          is_pipeline=True, pipeline_mode="auto-vision")
             raise HTTPException(502, "文本模型调用失败")
         if res is not None:
             if is_stream:
-                return StreamingResponse(
-                    res, media_type="text/event-stream", headers={"X-Pipeline": "auto-vision"},
+                rec = StreamRecorder(
+                    user_id=user.id, original_model=requested_model or "",
+                    prompt_text=prompt_text, provider_name="auto-vision",
+                    model_name=requested_model or "",
+                    request_id=trace.request_id,
+                    is_pipeline=True, pipeline_mode="auto-vision",
+                    start_time=trace._start_time,
                 )
+                return StreamingResponse(
+                    rec.record(res), media_type="text/event-stream",
+                    headers={"X-Pipeline": "auto-vision"},
+                )
+            # 非流式: 直接记录全文
+            pt = int(((res.get("usage") or {}).get("prompt_tokens", 0)) or 0)
+            ct_ = int(((res.get("usage") or {}).get("completion_tokens", 0)) or 0)
+            save_chat_log(
+                user_id=user.id, original_model=requested_model or "",
+                provider_name="auto-vision", model_name=requested_model or "",
+                prompt_text=prompt_text,
+                completion_text=extract_completion_text(res),
+                prompt_tokens=pt, completion_tokens=ct_,
+                is_pipeline=True, pipeline_mode="auto-vision",
+                latency_ms=trace.latency_ms,
+            )
             return JSONResponse(content=res)
 
     _strat = router_strategies.get(requested_model, "quality") if requested_model else "quality"
@@ -415,6 +488,11 @@ async def proxy_chat(
         trace.mark_error("无可用模型")
         trace.finish()
         save_trace(trace)
+        save_chat_log(
+            user_id=user.id, original_model=requested_model or "",
+            prompt_text=prompt_text, success=False, error_msg="无可用模型",
+            is_stream=stream, latency_ms=trace.latency_ms,
+        )
         raise HTTPException(503, f"无可用的模型: {requested_model or '任意'}")
 
     # 解析后的目标(别名/路由组)
@@ -503,8 +581,14 @@ async def proxy_chat(
                 trace.mark_selected(provider.name, model, f"stream ok, cb={'hit' if cb_open else 'clean'}")
                 trace.finish()
                 save_trace(trace)
+                rec = StreamRecorder(
+                    user_id=user.id, original_model=requested_model or "",
+                    prompt_text=prompt_text, provider_name=provider.name,
+                    model_name=model, request_id=trace.request_id,
+                    start_time=trace._start_time,
+                )
                 return StreamingResponse(
-                    _stream_with_fallback(resp, remaining),
+                    rec.record(_stream_with_fallback(resp, remaining)),
                     media_type="text/event-stream",
                     headers={"X-Provider": provider.name, "X-Model": model},
                 )
@@ -533,6 +617,14 @@ async def proxy_chat(
             trace.mark_tokens(pt, ct)
             trace.finish()
             save_trace(trace)
+            save_chat_log(
+                user_id=user.id, original_model=requested_model or "",
+                provider_name=provider.name, model_name=model,
+                prompt_text=prompt_text,
+                completion_text=extract_completion_text(resp),
+                prompt_tokens=pt, completion_tokens=ct,
+                is_stream=False, latency_ms=trace.latency_ms,
+            )
 
             try:
                 session = get_session()
@@ -562,6 +654,12 @@ async def proxy_chat(
     trace.mark_error(last_err or "all candidates failed")
     trace.finish()
     save_trace(trace)
+    save_chat_log(
+        user_id=user.id, original_model=requested_model or "",
+        prompt_text=prompt_text, success=False,
+        error_msg=str(last_err or "all candidates failed"),
+        is_stream=stream, latency_ms=trace.latency_ms,
+    )
     raise HTTPException(502, f"所有候选模型均失败: {last_err}")
 
 

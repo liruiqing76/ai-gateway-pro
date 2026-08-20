@@ -249,6 +249,48 @@ class RequestTrace(Base):
 
 
 # ============================================================
+# 聊天记录表 — 每次请求的输入输出全文与长度
+# ============================================================
+class ChatLog(Base):
+    __tablename__ = "chat_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_id = Column(String(36), nullable=True, index=True)  # 关联 trace 的 request_id
+
+    # 请求输入
+    original_model = Column(String(128), nullable=False)  # 客户端原始 model 字段
+    provider_name = Column(String(64), nullable=True)    # 实际命中渠道
+    model_name = Column(String(128), nullable=True)      # 实际命中模型
+
+    # 请求/回复全文
+    prompt_text = Column(Text, nullable=True)            # 输入 messages 拼接文本
+    completion_text = Column(Text, nullable=True)        # 输出全文(失败时为空)
+
+    # 长度统计(字符数)
+    prompt_chars = Column(Integer, default=0)
+    completion_chars = Column(Integer, default=0)
+    total_chars = Column(Integer, default=0)
+
+    # token 用量(非流式有, 流式可能为空)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+
+    # 元数据
+    is_stream = Column(Boolean, default=False)
+    is_pipeline = Column(Boolean, default=False)
+    pipeline_mode = Column(String(16), nullable=True)
+
+    # 性能
+    latency_ms = Column(Integer, nullable=True)
+    success = Column(Boolean, default=True)
+    error_msg = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+# ============================================================
 # 模型测速历史表
 # ============================================================
 class ModelSpeedLog(Base):

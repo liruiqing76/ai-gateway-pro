@@ -40,6 +40,9 @@
           <el-menu-item index="traces">
             <el-icon><List /></el-icon><span>请求链路</span>
           </el-menu-item>
+          <el-menu-item index="chats">
+            <el-icon><ChatLineRound /></el-icon><span>聊天记录</span>
+          </el-menu-item>
         </el-menu>
       </nav>
     </aside>
@@ -68,6 +71,7 @@
         <Routers v-if="activePage === 'routers'" />
         <Aliases v-if="activePage === 'aliases'" />
         <Traces v-if="activePage === 'traces'" />
+        <Chats v-if="activePage === 'chats'" />
       </main>
     </div>
   </div>
@@ -87,6 +91,7 @@ import Checkin from './views/Checkin.vue'
 import Routers from './views/Routers.vue'
 import Aliases from './views/Aliases.vue'
 import Traces from './views/Traces.vue'
+import Chats from './views/Chats.vue'
 
 const pageTitle = {
   dashboard: '仪表盘',
@@ -98,6 +103,7 @@ const pageTitle = {
   routers: '路由组',
   aliases: '模型别名',
   traces: '请求链路',
+  chats: '聊天记录',
 }
 
 const showLogin = ref(true)
