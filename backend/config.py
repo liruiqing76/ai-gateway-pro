@@ -77,5 +77,17 @@ class Settings(BaseSettings):
     # 远程校验超时(秒)
     LICENSE_SERVER_TIMEOUT: int = 5
 
+    # ---- 经验积累 / 每日总结 ----
+    # 是否启用: 从聊天记录提炼经验 + 每日总结 + 下次调用注入
+    EXPERIENCE_ENABLED: bool = True
+    # 是否在每次 /v1/chat/completions 调用时注入历史经验(自动)
+    EXPERIENCE_INJECT_AUTO: bool = True
+    # 每日总结自动执行时间(24h, "HH:MM")
+    EXPERIENCE_SUMMARY_TIME: str = "23:30"
+    # 每次最多总结经验条数
+    EXPERIENCE_DISTILL_LIMIT: int = 40
+    # 每日总结保留最近天数
+    EXPERIENCE_KEEP_DAYS: int = 90
+
 
 settings = Settings()

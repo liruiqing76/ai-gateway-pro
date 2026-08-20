@@ -33,6 +33,7 @@ from backend.core.chat_log import (
 from backend.core.router_group import classify_model
 from backend.core import vision
 from backend.core.orchestrate import _extract_text
+from backend.config import settings
 from backend.models import get_session, User, Provider, Router, UsageLog, ModelAlias
 
 logger = logging.getLogger("gateway.proxy")
@@ -209,6 +210,20 @@ async def proxy_chat(
 
     # 输入全文(用于聊天记录; 失败也不阻断)
     prompt_text = extract_prompt_text(body)
+
+    # ── 经验注入: 把历史积累的经验/教训作为 system 前缀注入本次调用 ──
+    if settings.EXPERIENCE_ENABLED and settings.EXPERIENCE_INJECT_AUTO:
+        try:
+            from backend.core.experience import build_injection_block, has_injection
+            msgs = body.get("messages") or []
+            if msgs and not has_injection(msgs):
+                block = build_injection_block(user.id, requested_model or "")
+                if block:
+                    body["messages"] = [
+                        {"role": "system", "content": block}
+                    ] + msgs
+        except Exception:
+            logger.exception("experience inject failed (non-blocking)")
 
     # 初始化链路追踪
     trace = TraceContext(user_id=user.id, original_model=requested_model or "", is_stream=stream)

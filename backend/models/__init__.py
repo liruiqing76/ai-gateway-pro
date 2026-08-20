@@ -297,6 +297,40 @@ class ChatLog(Base):
 
 
 # ============================================================
+# 经验库表 — 从聊天记录沉淀的经验/教训/标准流程
+# 参考 OpenCovibe 经验引擎: lesson(教训)/fact(事实)/sop(标准流程)
+# 定时任务从 chat_logs 提炼, 下次调用时注入到模型上下文
+# ============================================================
+class ExperienceLog(Base):
+    __tablename__ = "experience_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String(16), default="lesson")  # lesson / fact / sop
+    title = Column(String(256), nullable=False)
+    content = Column(Text, nullable=False)        # 经验/教训正文
+    source_model = Column(String(128), nullable=True)  # 来源模型
+    source_chat_id = Column(Integer, nullable=True)    # 来源 chat_logs.id
+    pinned = Column(Boolean, default=False)            # 钉住豁免自动淘汰
+    verify_fail_count = Column(Integer, default=0)     # 被验证无效次数
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+# ============================================================
+# 每日总结表 — 每天自动生成的经验/教训总结
+# ============================================================
+class DailySummary(Base):
+    __tablename__ = "daily_summaries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    summary_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    content = Column(Text, nullable=False)      # 当日经验教训总结
+    daily_stats = Column(JSON, nullable=True)   # 当日请求/token/成功数等
+    created_at = Column(DateTime, default=datetime.now)
+
+
+# ============================================================
 # 模型测速历史表
 # ============================================================
 class ModelSpeedLog(Base):
