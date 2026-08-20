@@ -53,8 +53,9 @@
             <span v-if="(row.models || []).length > 6" style="color:var(--gw-text-tertiary);font-size:12px">+{{ (row.models || []).length - 6 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column label="操作" width="150" align="center">
           <template #default="{row}">
+            <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" text type="danger" @click="del(row.name)">删除</el-button>
           </template>
         </el-table-column>
@@ -88,9 +89,9 @@
               <el-button size="small" text type="danger" @click="removeGroup(name)">删除</el-button>
             </div>
           </div>
-          <div v-for="opt in allOptions" :key="opt.model" class="model-option">
+          <div v-for="opt in allOptions" :key="opt.key" class="model-option">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
-              <el-checkbox :model-value="selectedMap[name]?.has(opt.model) || false" @change="toggleModel(name, opt.model, $event)" />
+              <el-checkbox :model-value="selectedMap[name]?.has(opt.key) || false" @change="toggleModel(name, opt.key, $event)" />
               <span :class="'status-dot ' + (opt.available === true ? 'ok' : opt.available === false ? 'fail' : 'unknown')"></span>
               <el-tag size="small" type="info">{{ opt.provider }}</el-tag>
               <span>{{ opt.model }}</span>
@@ -103,6 +104,34 @@
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" @click="saveAll" :loading="saving">保存所有路由</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 单个路由组编辑弹窗 -->
+    <el-dialog v-model="showEdit" :title="`✏️ 编辑路由组：${editName}`" width="640px" top="8vh" destroy-on-close @open="loadEditOptions">
+      <div v-if="editLoading" v-loading="editLoading" style="min-height:150px" />
+      <div v-else style="max-height:480px;overflow-y:auto">
+        <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-weight:600">🔀 {{ editName }}</span>
+          <el-select v-model="editStrategy" size="small" style="width:130px">
+            <el-option label="质量优先" value="quality" />
+            <el-option label="最快优先" value="fastest" />
+            <el-option label="最稳优先" value="stable" />
+          </el-select>
+          <span style="font-size:12px;color:var(--gw-text-tertiary)">已选 {{ editSelected.size }} / {{ editOptions.length }}</span>
+        </div>
+        <div v-if="editOptions.length === 0" style="text-align:center;padding:30px;color:var(--gw-text-tertiary)">暂无可用模型，请先在渠道管理添加</div>
+        <div v-for="opt in editOptions" :key="opt.key" class="model-option">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+            <el-checkbox :model-value="editSelected.has(opt.key)" @change="toggleEdit(opt.key, $event)" />
+            <el-tag size="small" type="info">{{ opt.provider }}</el-tag>
+            <span>{{ opt.model }}</span>
+          </label>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showEdit = false">取消</el-button>
+        <el-button type="primary" @click="saveEdit" :loading="editSaving">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -128,6 +157,69 @@ const routersData = reactive({})
 const routerStrategies = reactive({})
 const selectedMap = reactive({})
 const newName = ref('')
+
+// 单个路由组编辑
+const showEdit = ref(false)
+const editLoading = ref(false)
+const editSaving = ref(false)
+const editName = ref('')
+const editStrategy = ref('quality')
+const editOptions = ref([])
+const editSelected = ref(new Set())
+
+function openEdit(row) {
+  editName.value = row.name
+  editStrategy.value = row.strategy || 'quality'
+  showEdit.value = true
+}
+
+async function loadEditOptions() {
+  editLoading.value = true
+  try {
+    const [r, r2] = await Promise.all([api.get('/api/providers'), api.get('/api/routers')])
+    const list = r.data || []
+    editOptions.value = []
+    list.forEach(p => {
+      ;(p.models || []).forEach(m => {
+        editOptions.value.push({ provider: p.name, model: m, key: `${p.name}-${m}` })
+      })
+    })
+    const data = r2.data?.data || r2.data || {}
+    const entry = data[editName.value] || {}
+    const models = entry?.models || entry || []
+    editStrategy.value = entry?.strategy || editStrategy.value
+    editSelected.value = new Set(models)
+  } catch (e) {
+    ElMessage.error('加载失败: ' + e)
+  } finally {
+    editLoading.value = false
+  }
+}
+
+function toggleEdit(key, checked) {
+  const s = new Set(editSelected.value)
+  if (checked) s.add(key)
+  else s.delete(key)
+  editSelected.value = s
+}
+
+async function saveEdit() {
+  editSaving.value = true
+  try {
+    await api.post('/api/routers', {
+      name: editName.value,
+      models: [...editSelected.value],
+      strategy: editStrategy.value,
+    })
+    ElMessage.success('路由组已保存')
+    showEdit.value = false
+    loadGroups()
+  } catch (e) {
+    ElMessage.error('保存失败: ' + e)
+  } finally {
+    editSaving.value = false
+  }
+}
 
 async function loadGroups() {
   loading.value = true
@@ -181,7 +273,8 @@ async function loadData() {
     allOptions.value = []
     list.forEach(p => {
       ;(p.models || []).forEach(m => {
-        allOptions.value.push({ provider: p.name, model: m, available: undefined, latency_ms: undefined })
+        // key 用「渠道名-模型名」: 与路由组存储/路由匹配的规范一致, 才能正确回显勾选
+        allOptions.value.push({ provider: p.name, model: m, key: `${p.name}-${m}`, available: undefined, latency_ms: undefined })
       })
     })
     const r2 = await api.get('/api/routers')
@@ -240,11 +333,11 @@ function autoClassify() {
   allOptions.value.forEach(opt => {
     const m = opt.model.toLowerCase()
     if (m.includes('vl') || m.includes('vision') || m.includes('qvq') || m.includes('internvl')) {
-      groups.vision.push(opt.model)
+      groups.vision.push(opt.key)
     } else if (m.includes('8b') || m.includes('7b') || m.includes('3b') || m.includes('flash') || m.includes('lite')) {
-      groups.quick.push(opt.model)
+      groups.quick.push(opt.key)
     } else {
-      groups.high_quality.push(opt.model)
+      groups.high_quality.push(opt.key)
     }
   })
   Object.entries(groups).forEach(([name, models]) => {

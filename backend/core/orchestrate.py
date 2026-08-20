@@ -2,17 +2,19 @@
 # 智能网关 — 多模型编排引擎
 # relay(接力) / review(审阅)
 # model 命名: relay:组A/组B/组C  |  review:主/审
+# 支持非流式 + 最后一级流式输出
 # ============================================================
 
 import json
 import logging
-from typing import Optional, Callable, Awaitable
+from typing import Optional, Callable, Awaitable, AsyncGenerator
 
 logger = logging.getLogger("gateway.orchestrate")
 
 MAX_RELAY_STAGES = 5
 
 ForwardFn = Callable[..., Awaitable[Optional[dict]]]
+ForwardStreamFn = Callable[..., Awaitable[tuple[Optional[AsyncGenerator[bytes, None]], Optional[str]]]]
 
 
 def parse_pipeline(model: str) -> Optional[tuple[str, list[str]]]:
@@ -169,3 +171,125 @@ async def run_review(
         return review_resp
     logger.warning("review stage returned empty, return draft")
     return draft_resp
+
+
+# ============================================================
+# 流式编排: 最后一级流式输出, 前面的级非流式
+# ============================================================
+
+def build_stage_body(
+    body: dict,
+    stage_index: int,
+    total_stages: int,
+    original_prompt: str,
+    last_text: str = "",
+) -> dict:
+    """构造某一阶段的请求 body"""
+    stage_body = json.loads(json.dumps(body))
+    if stage_index == 0:
+        stage_body["messages"] = _set_prompt(body, original_prompt)
+    else:
+        combined = (
+            f"{original_prompt}\n\n"
+            f"[上一级输出]\n{last_text}\n\n"
+            f"请基于以上内容继续处理, 输出最终结果:"
+        )
+        base_msgs = _set_prompt(body, combined)
+        stage_body["messages"] = _context_handoff(base_msgs, stage_index, total_stages, last_text)
+    return stage_body
+
+
+async def run_relay_stream(
+    stages: list[str],
+    body: dict,
+    forward: ForwardFn,
+    forward_stream: ForwardStreamFn,
+) -> tuple[Optional[AsyncGenerator[bytes, None]], Optional[str]]:
+    """
+    流式接力编排: 前面的级非流式, 最后一级流式输出。
+
+    返回 (generator, error) — 与 forward_stream 签名一致,
+    可直接作为 StreamingResponse 的 body。
+    """
+    original_prompt = _get_prompt(body)
+    if not original_prompt:
+        return None, "需要 user 消息"
+
+    last_text = ""
+    last_resp = None
+
+    # 前 N-1 级: 非流式
+    for i in range(len(stages) - 1):
+        stage = stages[i]
+        stage_body = build_stage_body(body, i, len(stages), original_prompt, last_text)
+        resp = await forward(stage, stage_body)
+        if resp is None:
+            logger.warning("relay stream stage %d (%s) failed, skipping", i, stage)
+            continue
+        last_text = _extract_text(resp)
+        if last_text:
+            last_resp = resp
+        else:
+            logger.warning("relay stream stage %d (%s) returned empty, skipping", i, stage)
+
+    # 最后一级: 流式
+    last_stage = stages[-1]
+    last_index = len(stages) - 1
+    stage_body = build_stage_body(body, last_index, len(stages), original_prompt, last_text)
+
+    gen, err = await forward_stream(last_stage, stage_body)
+    if gen is not None:
+        return gen, None
+
+    # 最后一级也失败了, 回退到非流式结果
+    if last_resp is not None:
+        logger.warning("relay stream last stage failed, returning non-stream result")
+        return None, "last stage stream failed, use non-stream fallback"
+
+    return None, err or "all relay stages failed"
+
+
+async def run_review_stream(
+    stages: list[str],
+    body: dict,
+    forward: ForwardFn,
+    forward_stream: ForwardStreamFn,
+) -> tuple[Optional[AsyncGenerator[bytes, None]], Optional[str]]:
+    """
+    流式审阅编排: 主模型非流式生成初稿 → 审阅模型流式修订。
+
+    返回 (generator, error)。
+    """
+    if len(stages) != 2:
+        return None, "review 需要恰好 2 个阶段"
+
+    main_stage, review_stage = stages
+    original_prompt = _get_prompt(body)
+    if not original_prompt:
+        return None, "需要 user 消息"
+
+    # 主模型: 非流式
+    draft_resp = await forward(main_stage, body)
+    if draft_resp is None:
+        return None, "主模型生成失败"
+    draft_text = _extract_text(draft_resp)
+    if not draft_text:
+        return None, "主模型返回空内容"
+
+    # 审阅模型: 流式
+    review_body = json.loads(json.dumps(body))
+    review_prompt = (
+        f"{original_prompt}\n\n"
+        f"[初稿]\n{draft_text}\n\n"
+        f"请审阅以上初稿, 检查错误/遗漏/表达, 输出修订后的最终版本:"
+    )
+    base_msgs = _set_prompt(body, review_prompt)
+    review_body["messages"] = _context_handoff(base_msgs, 1, 2, draft_text)
+
+    gen, err = await forward_stream(review_stage, review_body)
+    if gen is not None:
+        return gen, None
+
+    # 审阅流式失败, 回退返回初稿
+    logger.warning("review stream stage failed, returning draft as non-stream")
+    return None, "review stream failed"

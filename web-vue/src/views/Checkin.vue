@@ -109,6 +109,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const isDesktop = ref(typeof window.pywebview !== 'undefined')
+const checkinApi = window.pywebview?.api?.checkin
 const wb = ref({ signed: false, date: '' })
 const trae = ref({ signed: false, date: '' })
 const running = ref('')
@@ -129,9 +130,9 @@ function formatTime(iso) {
 }
 
 async function refresh() {
-  if (!isDesktop.value) return
+  if (!isDesktop.value || !checkinApi) return
   try {
-    const status = await window.pywebview.api.checkin.get_status()
+    const status = await checkinApi.get_status()
     const d = JSON.parse(status)
     wb.value = d.workbuddy
     trae.value = d.trae
@@ -146,14 +147,14 @@ async function refresh() {
 }
 
 async function saveSchedule() {
-  if (!isDesktop.value) return
+  if (!isDesktop.value || !checkinApi) return
   try {
     const data = {
       enabled: schedule.value.enabled,
       workbuddy_time: wbTime.value || '09:00',
       trae_time: traeTime.value || '09:05',
     }
-    const resp = await window.pywebview.api.checkin.save_schedule(JSON.stringify(data))
+    const resp = await checkinApi.save_schedule(JSON.stringify(data))
     const d = JSON.parse(resp)
     if (d.ok) {
       ElMessage.success('定时设置已保存')
@@ -168,10 +169,11 @@ async function saveSchedule() {
 }
 
 async function run(app) {
+  if (!checkinApi) return
   running.value = app
   log.value = '签到中...'
   try {
-    const resp = await window.pywebview.api.checkin.run_checkin(app)
+    const resp = await checkinApi.run_checkin(app)
     const d = JSON.parse(resp)
     const result = d[app] || resp
     log.value = result

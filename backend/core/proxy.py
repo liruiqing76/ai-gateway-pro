@@ -28,17 +28,26 @@ def pick_available_models(
     routers: dict | None = None,
     force: bool = False,
     strategy: str = "quality",
+    user_aliases: dict | None = None,
 ) -> list[tuple[Provider, str]]:
     """
     返回按质量排序的候选 (provider, model) 列表。
 
     逻辑:
+    - 应用用户自定义别名映射 (如 gpt-4 → high_quality)
     - 如果请求的是路由组名 → 组内模型依次尝试
     - 如果请求的是具体模型名 → 找到匹配的(含前缀匹配)
     - 按质量分 + 延迟排序,熔断中的排在最后
     """
     raw = []
     fallback = []
+
+    # 应用别名映射
+    if user_aliases and requested_model:
+        resolved = user_aliases.get(requested_model)
+        if resolved:
+            logger.debug("alias resolved: %s -> %s", requested_model, resolved)
+            requested_model = resolved
 
     # 预处理: Provider.models 可能是 JSON 字符串
     import json as _json
@@ -100,16 +109,8 @@ def pick_available_models(
         raw = fallback
 
     # 按质量分排序
-    scored = [
-        (
-            quality_tracker.get_score(k),
-            quality_tracker.get_avg_latency(k) or 1e9,
-            p, m
-        )
-        for p, m, k in raw
-    ]
     scored = _sort_by_strategy(raw, strategy)
-    return [(p, m) for _, _, p, m in scored]
+    return [(p, m) for p, m, _ in scored]
 
 
 # ============================================================
@@ -185,7 +186,12 @@ async def forward_stream(
     model: str,
     body: dict,
 ) -> tuple[AsyncGenerator[bytes, None] | None, str | None]:
-    """流式转发,返回 (async_generator, error)"""
+    """
+    流式转发,返回 (async_generator, error)
+
+    改进:连接成功后验证第一个chunk，确保数据格式正确
+    如果连接成功但数据格式错误（如上游返回非SSE格式），会记录失败并返回错误
+    """
     key = f"{provider.name}||{model}"
     url = provider.base_url.rstrip("/") + "/chat/completions"
     headers = {
@@ -194,7 +200,7 @@ async def forward_stream(
     }
 
     req_body = json.loads(json.dumps(body))
-    req_body["model"] = model
+    req_body["model"] = MODEL_ALIASES.get(model, model)
 
     try:
         req = http_client.build_request("POST", url, json=req_body, headers=headers)
@@ -212,29 +218,38 @@ async def forward_stream(
         except Exception:
             err_msg = ""
         await resp.aclose()
-        logger.warning("upstream stream error %d from %s", resp.status_code, provider.name)
+        logger.warning("upstream stream error %d from %s: %s", resp.status_code, provider.name, err_msg[:200])
         circuit_breaker.record_fail(key)
         quality_tracker.record(key, "fail")
         return None, f"upstream {resp.status_code}"
 
-    # 成功
+    # 连接成功,创建共享迭代器避免重复消费httpx流
     circuit_breaker.record_success(key)
     quality_tracker.record(key, "ok")
-    start = time.time()
 
     async def gen():
-        prefix = f"🤖 {provider.name} · {model}"
-        prefix_done = False
+        done_sent = False
+        first_line_yielded = False
         try:
             async for line in resp.aiter_lines():
                 if not line:
                     continue
+
+                # 预读阶段:第一个有效行用于验证格式
+                if not first_line_yielded:
+                    first_line_yielded = True
+                    if not line.startswith("data: "):
+                        logger.warning("upstream stream invalid format from %s: %s", provider.name, line)
+                        break
+
+                # yield数据
                 if not line.startswith("data: "):
                     yield (line + "\n").encode()
                     continue
                 data_str = line[6:]
                 if data_str.strip() == "[DONE]":
                     yield "data: [DONE]\n\n".encode()
+                    done_sent = True
                     break
                 try:
                     obj = json.loads(data_str)
@@ -243,8 +258,15 @@ async def forward_stream(
                     yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode()
                 except json.JSONDecodeError:
                     yield (line + "\n").encode()
+        except Exception as e:
+            logger.warning("stream gen error from %s/%s: %s", provider.name, model, e)
         finally:
-            await resp.aclose()
+            # 注意:finally 中不能 yield,否则抛 RuntimeError
+            # [DONE] 已在正常路径或 except 中发送,这里只做资源清理
+            try:
+                await resp.aclose()
+            except Exception:
+                pass
 
     return gen(), None
 

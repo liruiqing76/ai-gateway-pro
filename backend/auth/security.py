@@ -129,8 +129,8 @@ def decrypt_secret(blob: str) -> str:
 # ============================================================
 def check_login_lock(user) -> tuple[bool, str]:
     """检查用户是否被锁定,返回 (是否锁定, 提示)"""
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        remain = (user.locked_until - datetime.utcnow()).seconds // 60
+    if user.locked_until and user.locked_until > datetime.now():
+        remain = (user.locked_until - datetime.now()).seconds // 60
         return True, f"登录失败次数过多,请 {remain} 分钟后再试"
     return False, ""
 
@@ -139,7 +139,7 @@ def record_login_failure(user) -> bool:
     """记录登录失败,返回是否已锁定"""
     user.login_attempts = (user.login_attempts or 0) + 1
     if user.login_attempts >= settings.LOGIN_MAX_ATTEMPTS:
-        user.locked_until = datetime.utcnow() + timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
+        user.locked_until = datetime.now() + timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
         user.login_attempts = 0
         return True
     return False
@@ -149,4 +149,4 @@ def reset_login_failures(user):
     """登录成功后重置"""
     user.login_attempts = 0
     user.locked_until = None
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now()

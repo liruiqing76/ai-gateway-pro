@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from backend.auth.middleware import get_current_user_from_jwt
 from backend.auth.security import encrypt_secret, decrypt_secret, mask_secret
-from backend.models import get_session, User, Provider, ProviderTemplate, Router
+from backend.core.proxy import get_context_length
+from backend.models import get_session, User, Provider, ProviderTemplate, Router, ModelSpeedLog
 
 logger = logging.getLogger("gateway.providers")
 
@@ -132,9 +133,63 @@ async def list_providers(user: User = Depends(get_current_user_from_jwt)):
                 "free_only": p.free_only,
                 "enabled": p.enabled,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
+                # 每个渠道的 模型名 -> 上下文长度 映射, 后端统一来源
+                "context_lengths": {
+                    m: get_context_length(m) for m in (p.models or [])
+                },
             }
             result.append(d)
         return result
+    finally:
+        session.close()
+
+
+# ============================================================
+# 读取最新测速数据 (放在 /{provider_id} 之前避免路由冲突)
+# ============================================================
+@router.get("/model-speeds")
+async def get_model_speeds(
+    user: User = Depends(get_current_user_from_jwt),
+):
+    """获取所有模型的最新测速数据"""
+    from sqlalchemy import func
+    session = get_session()
+    try:
+        # 子查询: 每个 prefixed_id 的最新一条记录
+        subq = (
+            session.query(
+                ModelSpeedLog.prefixed_id,
+                func.max(ModelSpeedLog.id).label("max_id"),
+            )
+            .filter_by(user_id=user.id)
+            .group_by(ModelSpeedLog.prefixed_id)
+            .subquery()
+        )
+        rows = (
+            session.query(ModelSpeedLog)
+            .join(subq, ModelSpeedLog.id == subq.c.max_id)
+            .all()
+        )
+        result = {}
+        last_check = None
+        for r in rows:
+            is_group = r.prefixed_id.startswith("router-group/")
+            result[r.prefixed_id] = {
+                "provider": r.provider_name,
+                "model": r.model_name,
+                "latency_ms": r.latency_ms,
+                "available": r.available,
+                "error": r.error_msg,
+                "checked_at": r.created_at.isoformat() if r.created_at else None,
+                "is_group": is_group,
+            }
+            if r.created_at and (last_check is None or r.created_at > last_check):
+                last_check = r.created_at
+        return {
+            "ok": True,
+            "speeds": result,
+            "last_check": last_check.isoformat() if last_check else None,
+        }
     finally:
         session.close()
 
@@ -447,3 +502,205 @@ async def test_provider(
                 return {"ok": False, "msg": f"HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as e:
         return {"ok": False, "msg": f"连接失败: {str(e)[:200]}"}
+
+
+# ============================================================
+# 路由组测速 — 通过聚合网关按策略转发 (真正验证聚合API可用性)
+# ============================================================
+@router.post("/check-all-models")
+async def check_all_models(
+    user: User = Depends(get_current_user_from_jwt),
+):
+    """按路由组测试聚合API: 传组名当model, 网关按策略自动选模型转发"""
+    session = get_session()
+    try:
+        providers = session.query(Provider).filter_by(user_id=user.id, enabled=True).all()
+        if not providers:
+            raise HTTPException(status_code=404, detail="暂无渠道")
+
+        import httpx
+        import time
+
+        gateway_api_key = user.api_key
+        gateway_base = "http://127.0.0.1:8765"
+
+        # 获取用户的路由组
+        from backend.models import Router as RouterModel
+        routers = session.query(RouterModel).filter_by(user_id=user.id).all()
+        if not routers:
+            raise HTTPException(status_code=404, detail="暂无路由组，请先配置路由组")
+
+        results = {}
+        async with httpx.AsyncClient(timeout=60) as client:
+            for r in routers:
+                group_name = r.name
+                strategy = r.strategy or "quality"
+                strategy_label = {"quality": "质量优先", "fastest": "最快优先", "stable": "最稳优先"}.get(strategy, strategy)
+
+                headers = {
+                    "Authorization": f"Bearer {gateway_api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": group_name,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                }
+                start = time.time()
+                available = False
+                latency_ms = None
+                error_msg = None
+                selected_model = None
+                try:
+                    resp = await client.post(
+                        f"{gateway_base}/v1/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    )
+                    elapsed = round((time.time() - start) * 1000, 1)
+                    latency_ms = int(elapsed)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("choices"):
+                            available = True
+                            # 从响应头或响应体推断实际使用的模型
+                            selected_model = data.get("model", "")
+                        else:
+                            error_msg = "上游返回空 choices"
+                    elif resp.status_code == 503:
+                        error_msg = "组内所有模型均不可用"
+                    else:
+                        body = resp.text[:200]
+                        error_msg = f"HTTP {resp.status_code}: {body}"
+                except Exception as e:
+                    elapsed = round((time.time() - start) * 1000, 1)
+                    latency_ms = int(elapsed) if elapsed > 1 else None
+                    error_msg = str(e)[:150]
+
+                results[group_name] = {
+                    "strategy": strategy,
+                    "strategy_label": strategy_label,
+                    "available": available,
+                    "latency_ms": latency_ms,
+                    "error": error_msg,
+                    "selected_model": selected_model,
+                }
+
+        # 写入测速历史
+        for group_name, info in results.items():
+            log = ModelSpeedLog(
+                user_id=user.id,
+                provider_name=group_name,
+                model_name=group_name,
+                prefixed_id=f"router-group/{group_name}",
+                latency_ms=info.get("latency_ms"),
+                available=info["available"],
+                error_msg=info.get("error"),
+            )
+            session.add(log)
+        session.commit()
+
+        return {"ok": True, "groups": results}
+    finally:
+        session.close()
+
+
+
+# ============================================================
+# 后台轮询测速 (被 lifespan 调用)
+# ============================================================
+async def _run_speed_check_for_all_users():
+    """对所有有渠道的用户执行测速, 结果写入 model_speed_logs"""
+    import asyncio
+    session = get_session()
+    try:
+        from backend.models import User as UserModel
+        users = session.query(UserModel).filter(UserModel.is_active == True).all()
+        user_ids = [u.id for u in users]
+    finally:
+        session.close()
+
+    for uid in user_ids:
+        try:
+            await _do_speed_check(uid)
+        except Exception as e:
+            logger.warning(f"测速失败 user={uid}: {e}")
+
+
+async def _do_speed_check(user_id: int):
+    """对单个用户按路由组测速(通过网关聚合端点), 写入 DB"""
+    import httpx, time, json as _json
+
+    session = get_session()
+    try:
+        providers = session.query(Provider).filter_by(user_id=user_id, enabled=True).all()
+        user = session.query(User).filter_by(id=user_id).first()
+        if not providers or not user:
+            return
+
+        gateway_api_key = user.api_key
+        gateway_base = "http://127.0.0.1:8765"
+
+        # 获取用户的路由组
+        from backend.models import Router as RouterModel
+        routers = session.query(RouterModel).filter_by(user_id=user_id).all()
+        if not routers:
+            logger.info(f"user={user_id} 无路由组, 跳过测速")
+            return
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            for r in routers:
+                group_name = r.name
+                headers = {
+                    "Authorization": f"Bearer {gateway_api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": group_name,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                }
+                start = time.time()
+                available = False
+                latency_ms = None
+                error_msg = None
+                try:
+                    resp = await client.post(
+                        f"{gateway_base}/v1/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    )
+                    elapsed = round((time.time() - start) * 1000, 1)
+                    latency_ms = int(elapsed)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("choices"):
+                            available = True
+                        else:
+                            error_msg = "上游返回空 choices"
+                    elif resp.status_code == 503:
+                        error_msg = "组内所有模型均不可用"
+                    else:
+                        error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                except Exception as e:
+                    elapsed = round((time.time() - start) * 1000, 1)
+                    latency_ms = int(elapsed) if elapsed > 1 else None
+                    error_msg = str(e)[:150]
+
+                log = ModelSpeedLog(
+                    user_id=user_id,
+                    provider_name=r.name,
+                    model_name=r.name,
+                    prefixed_id=f"router-group/{r.name}",
+                    latency_ms=latency_ms,
+                    available=available,
+                    error_msg=error_msg,
+                )
+                session.add(log)
+        session.commit()
+        logger.info(f"路由组测速完成 user={user_id}")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"路由组测速异常 user={user_id}: {e}")
+    finally:
+        session.close()

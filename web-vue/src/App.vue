@@ -34,6 +34,12 @@
           <el-menu-item index="routers">
             <el-icon><Coin /></el-icon><span>路由组</span>
           </el-menu-item>
+          <el-menu-item index="aliases">
+            <el-icon><Connection /></el-icon><span>模型别名</span>
+          </el-menu-item>
+          <el-menu-item index="traces">
+            <el-icon><List /></el-icon><span>请求链路</span>
+          </el-menu-item>
         </el-menu>
       </nav>
     </aside>
@@ -60,6 +66,8 @@
         <Billing v-if="activePage === 'billing'" />
         <Checkin v-if="activePage === 'checkin'" />
         <Routers v-if="activePage === 'routers'" />
+        <Aliases v-if="activePage === 'aliases'" />
+        <Traces v-if="activePage === 'traces'" />
       </main>
     </div>
   </div>
@@ -77,6 +85,8 @@ import ApiKey from './views/ApiKey.vue'
 import Billing from './views/Billing.vue'
 import Checkin from './views/Checkin.vue'
 import Routers from './views/Routers.vue'
+import Aliases from './views/Aliases.vue'
+import Traces from './views/Traces.vue'
 
 const pageTitle = {
   dashboard: '仪表盘',
@@ -86,6 +96,8 @@ const pageTitle = {
   billing: '计费中心',
   checkin: '自动签到',
   routers: '路由组',
+  aliases: '模型别名',
+  traces: '请求链路',
 }
 
 const showLogin = ref(true)

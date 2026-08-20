@@ -95,7 +95,7 @@ def require_admin(user: User = Depends(get_current_user_from_jwt)) -> User:
 async def check_quota(user: User = Depends(get_current_user_from_api_key)) -> User:
     """检查用户额度"""
     from datetime import datetime, timedelta
-    now = datetime.utcnow()
+    now = datetime.now()
     # 如果 quota_reset_at 已过,重置
     if user.quota_reset_at and user.quota_reset_at < now:
         user.quota_used_today = 0

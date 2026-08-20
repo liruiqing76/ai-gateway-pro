@@ -116,7 +116,7 @@ async def mark_paid(
             raise HTTPException(400, "订单已支付")
 
         order.payment_status = "paid"
-        order.paid_at = datetime.utcnow()
+        order.paid_at = datetime.now()
 
         # 升级用户 tier
         buyer = session.query(User).filter_by(id=order.user_id).first()
@@ -125,10 +125,10 @@ async def mark_paid(
             buyer.quota_daily = PLANS[order.plan_name]["daily_quota"]
             if order.plan_name == "pro":
                 from datetime import timedelta
-                buyer.tier_expires_at = datetime.utcnow() + timedelta(days=30)
+                buyer.tier_expires_at = datetime.now() + timedelta(days=30)
             elif order.plan_name == "enterprise":
                 from datetime import timedelta
-                buyer.tier_expires_at = datetime.utcnow() + timedelta(days=365)
+                buyer.tier_expires_at = datetime.now() + timedelta(days=365)
 
         session.commit()
         return {"ok": True, "msg": f"订单 {data.order_no} 已支付,用户升级为 {order.plan_name}"}

@@ -27,11 +27,13 @@ import webview
 import uvicorn
 
 # 调度器(桌面模式)
-from scheduler import CheckinScheduler
+from scheduler import CheckinScheduler, CHECKIN_DIR
 
 if getattr(sys, "frozen", False):
     BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-    DATA_DIR = Path(__file__).resolve().parent.parent
+    # 数据目录 = exe 所在目录: 单文件 exe 每次解包到不同临时目录,
+    # 必须把 DB/配置放到 exe 旁才能持久化(否则即用即丢)
+    DATA_DIR = Path(sys.executable).resolve().parent
 else:
     BASE = Path(__file__).resolve().parent.parent
     DATA_DIR = BASE
@@ -53,7 +55,7 @@ class CheckinAPI:
     """暴露给前端的签到接口"""
 
     def __init__(self, scheduler: CheckinScheduler = None):
-        self.scheduler = scheduler
+        self._scheduler = scheduler
 
     def get_status(self) -> str:
         """返回 WorkBuddy 和 Trae 的签到状态"""
@@ -65,22 +67,22 @@ class CheckinAPI:
             "trae": {"signed": trae == today, "date": trae},
         }
         # 调度状态
-        if self.scheduler:
+        if self._scheduler:
             result["schedule"] = {
-                "enabled": self.scheduler.config.get("enabled", True),
-                "workbuddy_time": self.scheduler.config.get("workbuddy_time", "09:00"),
-                "trae_time": self.scheduler.config.get("trae_time", "09:05"),
-                "next_run": self.scheduler.next_run(),
+                "enabled": self._scheduler.config.get("enabled", True),
+                "workbuddy_time": self._scheduler.config.get("workbuddy_time", "09:00"),
+                "trae_time": self._scheduler.config.get("trae_time", "09:05"),
+                "next_run": self._scheduler.next_run(),
             }
         return json.dumps(result, ensure_ascii=False)
 
     def save_schedule(self, data: str) -> str:
         """保存定时配置: {"enabled": true, "workbuddy_time": "09:00", ...}"""
-        if not self.scheduler:
+        if not self._scheduler:
             return json.dumps({"ok": False, "error": "调度器未初始化"})
         try:
             payload = json.loads(data) if isinstance(data, str) else data
-            cfg = self.scheduler.set_schedule(payload)
+            cfg = self._scheduler.set_schedule(payload)
             return json.dumps({"ok": True, "config": cfg}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
@@ -88,7 +90,7 @@ class CheckinAPI:
     def run_checkin(self, app: str = "all") -> str:
         """执行签到: app = workbuddy | trae | all, 返回各应用执行结果"""
         results = {}
-        checkin_dir = BASE / "checkin"
+        checkin_dir = CHECKIN_DIR  # 打包后为 _MEIPASS/desktop/checkin, 源码为 desktop/checkin
         if app in ("all", "workbuddy"):
             results["workbuddy"] = self._run(checkin_dir / "workbuddy_checkin.py")
         if app in ("all", "trae"):
@@ -132,7 +134,7 @@ class SettingsAPI:
     """暴露给前端的应用设置接口（开机自启、服务信息）"""
 
     def __init__(self):
-        self.startup_dir = self._resolve_startup_dir()
+        self._startup_dir = self._resolve_startup_dir()
 
     def _resolve_startup_dir(self) -> Path:
         """获取当前 exe 所在目录（源码运行取项目根）"""
@@ -144,7 +146,7 @@ class SettingsAPI:
         """开机自启项指向的 exe（打包后为当前 exe，否则为 python desktop.py）"""
         if getattr(sys, "frozen", False):
             return Path(sys.executable)
-        return self.startup_dir / "desktop" / "desktop.py"
+        return self._startup_dir / "desktop" / "desktop.py"
 
     def get_settings(self) -> str:
         """返回当前设置与应用信息"""
@@ -193,7 +195,7 @@ class SettingsAPI:
             shell = Dispatch("WScript.Shell")
             shortcut = shell.CreateShortCut(str(lnk))
             shortcut.Targetpath = str(self._startup_exe())
-            shortcut.WorkingDirectory = str(self.startup_dir)
+            shortcut.WorkingDirectory = str(self._startup_dir)
             shortcut.save()
         else:
             if lnk.exists():
@@ -208,7 +210,10 @@ class SettingsAPI:
 def start_backend():
     """后台线程启动 FastAPI"""
     os.environ["GW_DESKTOP_MODE"] = "1"
-    os.environ["GW_DB_PATH"] = str(DATA_DIR / "data" / "gateway.db")
+    if getattr(sys, "frozen", False):
+        # 打包后: DB 放在 exe 旁的 data/ 目录, 持久化
+        os.environ["GW_DB_PATH"] = str(DATA_DIR / "data" / "gateway.db")
+    # 源码模式不设置 GW_DB_PATH → 走默认 backend/data/gateway.db, 与 uvicorn 模式一致
     from backend.main import app
     uvicorn.run(app, host="127.0.0.1", port=API_PORT, log_level="warning")
 
@@ -227,6 +232,21 @@ def _wait_for_backend(timeout: int = 40) -> None:
             pass
         time.sleep(0.5)
     print("[desktop] 警告: 等待后端超时, 仍将继续打开窗口")
+
+
+# ── 桌面 JS 桥容器 ──
+class DesktopBridge:
+    """pywebview js_api 容器。
+
+    必须用普通对象而不是 dict: pywebview 用 dir() 枚举 js_api 的属性名,
+    字典会被枚举出 dict 内置方法(clear/get/keys...) 而丢失 checkin/settings 两个 key,
+    导致 JS 端 window.pywebview.api.checkin 为 undefined, 调用即报 TypeError。
+    对象属性会被递归展开 → JS 端 window.pywebview.api.checkin.get_status() 可用。
+    """
+
+    def __init__(self, checkin: "CheckinAPI", settings: "SettingsAPI"):
+        self.checkin = checkin
+        self.settings = settings
 
 
 # ── 主入口 ──
@@ -268,10 +288,7 @@ def main():
         background_color="#FF3B3B",
         text_select=True,
         confirm_close=False,
-        js_api={
-            "checkin": checkin_api,
-            "settings": settings_api,
-        },
+        js_api=DesktopBridge(checkin_api, settings_api),
     )
     # 显式使用 Edge WebView2 引擎(已确认运行时已安装, GUIType 值为 'edgechromium')。
     # 不显式指定时 pywebview 在某些环境会自动选成 mshtml(IE)导致 JS 失效/窗口空白。

@@ -84,6 +84,49 @@ class TestAPIKey:
     def test_mask(self):
         assert mask_secret("sk-gw-abcdefghijklmnopqrstuvwxyz123456") == "sk-gw-****3456"
         assert mask_secret("") == ""
+        assert mask_secret("short") == "shor****"  # 短密钥也用前缀+掩码
+
+    def test_mask_none(self):
+        assert mask_secret(None) == ""
+
+    def test_verify_invalid_hash(self):
+        """损坏的哈希 → False 而非抛异常"""
+        assert verify_password("Test1234!", "not-a-valid-bcrypt-hash") is False
+        assert verify_password("Test1234!", "") is False
+
+    def test_login_lock_and_failure(self):
+        from backend.auth.security import check_login_lock, record_login_failure, reset_login_failures
+        from datetime import datetime, timedelta
+
+        # 解锁状态
+        u = type("U", (), {"locked_until": None, "login_attempts": 0})()
+        locked, msg = check_login_lock(u)
+        assert locked is False
+        assert msg == ""
+
+        # 锁定 30 分钟
+        u2 = type("U", (), {"locked_until": datetime.utcnow() + timedelta(minutes=5), "login_attempts": 3})()
+        locked, msg = check_login_lock(u2)
+        assert locked is True
+        assert "分钟" in msg
+
+        # 达到阈值触发锁定
+        u3 = type("U", (), {"locked_until": None, "login_attempts": 4})()
+        locked = record_login_failure(u3)
+        assert locked is True     # 达到最大值后锁定
+        assert u3.locked_until is not None
+        assert u3.login_attempts == 0  # 计数清零
+
+        # 未达阈值只计数
+        u4 = type("U", (), {"locked_until": None, "login_attempts": 1})()
+        locked = record_login_failure(u4)
+        assert locked is False
+        assert u4.login_attempts == 2
+
+        # 成功登录重置
+        reset_login_failures(u4)
+        assert u4.login_attempts == 0
+        assert u4.locked_until is None
 
 
 class TestEncryption:

@@ -56,6 +56,16 @@ class TestPlans:
         pro = next(p for p in resp.json() if p["plan"] == "pro")
         assert pro["price_cents"] == 2900  # ¥29
 
+    def test_unknown_plan_defaults_zero(self):
+        """未知计划名 → 返回 0 配额/渠道上限而非抛异常"""
+        from backend.billing.plans import get_plan, get_plan_daily_quota, get_plan_max_providers
+        assert get_plan("nonexistent") is None
+        assert get_plan_daily_quota("nonexistent") == 0
+        assert get_plan_max_providers("nonexistent") == 0
+        # 已知计划正常
+        assert get_plan_daily_quota("free") == 100
+        assert get_plan_max_providers("pro") == 20
+
 
 class TestBillingMe:
     def test_my_billing(self):

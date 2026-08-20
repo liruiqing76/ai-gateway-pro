@@ -72,7 +72,7 @@ async def register(data: RegisterIn):
             invited_by=None,
             quota_daily=1000,
             quota_used_today=0,
-            quota_reset_at=datetime.utcnow() + timedelta(days=1),
+            quota_reset_at=datetime.now() + timedelta(days=1),
         )
 
         # 邀请码处理
@@ -181,7 +181,11 @@ async def change_password(
 
     session = get_session()
     try:
-        user.password_hash = hash_password(data.new_password)
+        # user 来自 JWT 依赖, 其原 session 已关闭 → 需在当前 session 重新加载再改密码
+        u = session.query(User).filter_by(id=user.id).first()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        u.password_hash = hash_password(data.new_password)
         session.commit()
         return {"ok": True, "msg": "密码已修改"}
     finally:

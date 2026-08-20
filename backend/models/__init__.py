@@ -43,11 +43,12 @@ class User(Base):
     login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     last_login_at = Column(DateTime, nullable=True)
 
     providers = relationship("Provider", back_populates="user", cascade="all, delete-orphan")
     routers = relationship("Router", back_populates="user", cascade="all, delete-orphan")
+    model_aliases = relationship("ModelAlias", backref="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -81,8 +82,8 @@ class Provider(Base):
     free_only = Column(Boolean, default=True)
     is_template = Column(Boolean, default=False)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("User", back_populates="providers")
 
@@ -101,7 +102,7 @@ class Router(Base):
     name = Column(String(64), nullable=False)
     models = Column(JSON, default=list)
     strategy = Column(String(16), default="quality")  # quality / cost / random / failover
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", back_populates="routers")
 
@@ -123,7 +124,7 @@ class UsageLog(Base):
     latency_ms = Column(Integer, nullable=True)
     success = Column(Boolean, default=True)
     error_msg = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
 
 # ============================================================
@@ -138,7 +139,7 @@ class CheckinLog(Base):
     status = Column(String(16), nullable=False)  # success / failed / skipped
     detail = Column(Text, nullable=True)
     claimed_quota = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # ============================================================
@@ -158,7 +159,7 @@ class Order(Base):
     payment_status = Column(String(16), default="pending")   # pending / paid / refunded / expired
     payment_ref = Column(String(128), default="")
     paid_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     remark = Column(String(512), default="")
 
 
@@ -178,7 +179,90 @@ class ProviderTemplate(Base):
     notes = Column(Text, nullable=True)
     tags = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+# ============================================================
+# 模型别名表 (用户自定义别名映射)
+# ============================================================
+class ModelAlias(Base):
+    __tablename__ = "model_aliases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    alias = Column(String(128), nullable=False)  # 别名, 如 "gpt-4"
+    target = Column(String(128), nullable=False)  # 目标模型/路由组, 如 "high_quality" 或 "NVIDIA-deepseek-v3"
+    description = Column(String(256), nullable=True)  # 描述
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # 复合唯一索引: 同一用户的别名不能重复
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
+
+# ============================================================
+# 请求链路日志表
+# ============================================================
+class RequestTrace(Base):
+    __tablename__ = "request_traces"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_id = Column(String(36), nullable=False, index=True)  # UUID
+
+    # 请求输入
+    original_model = Column(String(128), nullable=False)  # 客户端原始 model 字段
+    resolved_model = Column(String(128), nullable=True)   # 别名/路由组解析后的目标
+    is_stream = Column(Boolean, default=False)
+    is_pipeline = Column(Boolean, default=False)          # 是否编排请求
+    pipeline_mode = Column(String(16), nullable=True)     # relay / review
+
+    # 实际选择
+    provider_name = Column(String(64), nullable=True)
+    model_name = Column(String(128), nullable=True)
+    selection_strategy = Column(String(16), nullable=True)  # quality / fastest / stable
+    selection_reason = Column(String(256), nullable=True)   # 选择原因
+
+    # 熔断/冷却
+    circuit_breaker_hit = Column(Boolean, default=False)
+    rate_limit_hit = Column(Boolean, default=False)
+    cooldown_seconds = Column(Integer, nullable=True)
+
+    # 性能
+    latency_ms = Column(Integer, nullable=True)
+    success = Column(Boolean, default=True)
+    error_msg = Column(Text, nullable=True)
+
+    # Token 用量
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+
+    # 编排阶段详情 (JSON)
+    stages_detail = Column(JSON, nullable=True)
+    # 例: [{"stage": 0, "provider": "NVIDIA", "model": "deepseek-v3", "latency_ms": 1200, "success": true}]
+
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+# ============================================================
+# 模型测速历史表
+# ============================================================
+class ModelSpeedLog(Base):
+    __tablename__ = "model_speed_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider_name = Column(String(64), nullable=False)
+    model_name = Column(String(256), nullable=False)
+    prefixed_id = Column(String(320), nullable=False)  # provider-model
+    latency_ms = Column(Integer, nullable=True)
+    available = Column(Boolean, default=False)
+    error_msg = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
 
 # ============================================================

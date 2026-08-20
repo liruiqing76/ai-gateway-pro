@@ -112,3 +112,44 @@ def test_router_in_models_list(client):
     assert r.status_code == 200
     ids = [m["id"] for m in r.json().get("data", [])]
     assert "my-group" in ids
+
+
+class TestRouterValidation:
+    """路由组请求校验分支"""
+
+    def test_missing_name_400(self, client):
+        r = client.post("/api/routers", json={"models": ["a"], "strategy": "quality"})
+        assert r.status_code == 400
+        assert "路由名称必填" in r.json()["detail"]
+
+    def test_models_must_be_list_400(self, client):
+        r = client.post("/api/routers", json={"name": "g1", "models": "not-a-list", "strategy": "quality"})
+        assert r.status_code == 400
+        assert "models 必须是数组" in r.json()["detail"]
+
+    def test_invalid_strategy_400(self, client):
+        r = client.post("/api/routers", json={"name": "g1", "models": ["a"], "strategy": "bogus"})
+        assert r.status_code == 400
+        assert "strategy" in r.json()["detail"]
+
+    def test_delete_missing_404(self, client):
+        r = client.delete("/api/routers/nonexistent")
+        assert r.status_code == 404
+        assert "路由组不存在" in r.json()["detail"]
+
+    def test_init_defaults_builds_three_groups(self, client):
+        """init-defaults 按渠道模型自动生成三分类路由组"""
+        r = client.post("/api/routers/init-defaults")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        created = data["created"]
+        # 渠道模型: z-ai/glm-5.2 → high_quality, qwen-vl-plus → vision
+        assert "high_quality" in created
+        assert "vision" in created
+
+        # 生成后可在 /v1/models 里看到
+        r = client.get("/v1/models")
+        ids = {m["id"] for m in r.json()["data"]}
+        assert "high_quality" in ids
+        assert "vision" in ids

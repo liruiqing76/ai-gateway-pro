@@ -2,7 +2,10 @@
   <div>
     <div class="page-header">
       <h2>渠道管理</h2>
-      <el-button type="primary" @click="openAdd">+ 添加渠道</el-button>
+      <div style="display:flex;gap:8px">
+        <el-button @click="openTemplateDialog">⚡ 一键添加</el-button>
+        <el-button type="primary" @click="openAdd">+ 添加渠道</el-button>
+      </div>
     </div>
 
     <el-card shadow="hover">
@@ -30,6 +33,7 @@
       </el-table>
     </el-card>
 
+    <!-- 手动添加/编辑渠道 -->
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑渠道' : '添加渠道'" width="520px" top="8vh" destroy-on-close>
       <el-form :model="form" label-position="top">
         <el-form-item label="名称">
@@ -53,11 +57,33 @@
         <el-button type="primary" @click="save" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 模板一键添加 -->
+    <el-dialog v-model="templateDialogVisible" title="⚡ 模板一键添加" width="560px" top="8vh" destroy-on-close @open="loadTemplates">
+      <div v-if="templatesLoading" v-loading="templatesLoading" style="min-height:160px" />
+      <div v-else class="template-grid">
+        <div v-for="tpl in templates" :key="tpl.name" class="template-card">
+          <div class="template-header">
+            <span class="template-name">{{ tpl.name }}</span>
+            <el-tag v-if="tpl.tags" size="small" :type="tpl.tags.includes('付费') ? 'warning' : 'success'" style="margin-left:auto">
+              {{ tpl.tags.includes('付费') ? '付费' : '免费' }}
+            </el-tag>
+          </div>
+          <div class="template-notes">{{ tpl.notes }}</div>
+          <div class="template-models">
+            <el-tag v-for="m in (tpl.models || []).slice(0,4)" :key="m" size="small" style="margin:2px 4px 2px 0">{{ m }}</el-tag>
+            <span v-if="(tpl.models || []).length > 4" style="font-size:11px;color:var(--gw-text-tertiary)">+{{ (tpl.models || []).length - 4 }}</span>
+          </div>
+          <el-input v-model="tplKeys[tpl.name]" type="password" placeholder="填入该平台的 API Key" show-password size="small" style="margin:8px 0" />
+          <el-button size="small" type="primary" style="width:100%" @click="applyTemplate(tpl)" :disabled="!tplKeys[tpl.name]">添加</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
@@ -70,7 +96,14 @@ const editing = ref(false)
 const editId = ref(null)
 const form = ref({ name: '', base_url: '', api_key: '', models_str: '' })
 
-onMounted(async () => {
+const templateDialogVisible = ref(false)
+const templatesLoading = ref(false)
+const templates = ref([])
+const tplKeys = reactive({})
+
+onMounted(loadProviders)
+
+async function loadProviders() {
   loading.value = true
   try {
     const resp = await api.get('/api/providers')
@@ -80,13 +113,47 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
 
 function openAdd() {
   editing.value = false
   editId.value = null
   form.value = { name: '', base_url: '', api_key: '', models_str: '' }
   dialogVisible.value = true
+}
+
+async function openTemplateDialog() {
+  templateDialogVisible.value = true
+  await loadTemplates()
+}
+
+async function loadTemplates() {
+  templatesLoading.value = true
+  try {
+    const resp = await api.get('/api/providers/templates/all')
+    templates.value = resp.data || []
+  } catch (e) {
+    ElMessage.error('加载模板失败: ' + e)
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+async function applyTemplate(tpl) {
+  const key = tplKeys[tpl.name]
+  if (!key) return
+  try {
+    const resp = await api.post('/api/providers/apply-template', {
+      template_name: tpl.name,
+      api_key: key,
+    })
+    ElMessage.success(`已添加 ${tpl.name}`)
+    delete tplKeys[tpl.name]
+    await loadProviders()
+    templateDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '添加失败')
+  }
 }
 
 function edit(row) {
@@ -138,9 +205,7 @@ async function save() {
     }
     ElMessage.success(editing.value ? '已更新' : '已添加')
     dialogVisible.value = false
-    // 刷新
-    const resp = await api.get('/api/providers')
-    providers.value = resp.data || []
+    await loadProviders()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
@@ -160,3 +225,39 @@ function del(row) {
   }).catch(() => {})
 }
 </script>
+
+<style scoped>
+.template-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.template-card {
+  border: 1px solid var(--gw-border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--gw-surface);
+}
+.template-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.template-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.template-notes {
+  font-size: 12px;
+  color: var(--gw-text-secondary);
+  margin: 6px 0;
+  line-height: 1.5;
+}
+.template-models {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+</style>

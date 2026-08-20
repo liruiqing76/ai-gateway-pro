@@ -48,7 +48,9 @@ class Settings(BaseSettings):
     POLL_INTERVAL: int = 300
     MAX_CONCURRENT_POLLS: int = 10
     # 代理转发超时(秒) — 每个上游模型尝试的最长时间
-    PROXY_TIMEOUT_SECONDS: int = 20
+    PROXY_TIMEOUT_SECONDS: int = 120
+    # 流式传输 per-chunk 超时(秒) — 上游超过此时间无数据则判定断流
+    STREAMING_TIMEOUT_SECONDS: int = 300
 
     # ---- 自动签到 ----
     CHECKIN_ENABLED: bool = True

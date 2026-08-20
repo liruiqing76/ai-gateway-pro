@@ -25,6 +25,8 @@ from backend.billing.routes import router as billing_router
 from backend.api.routers import router as routers_router
 from backend.api.router_check import router as check_router
 from backend.api.usage import router as usage_router
+from backend.api.aliases import router as aliases_router
+from backend.api.traces import router as traces_router
 
 # 日志
 logging.basicConfig(
@@ -39,8 +41,32 @@ logger = logging.getLogger("gateway")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """启动/关闭钩子"""
+    create_tables()  # 幂等建表: 全新数据库首次启动时补齐所有表
     logger.info("智能网关 启动中...")
+
+    # 启动后台测速轮询任务
+    import asyncio
+    from backend.api.providers import _run_speed_check_for_all_users
+
+    async def _speed_poll_loop():
+        """每 2 小时自动测速一次, 启动后先等 60 秒再开始"""
+        await asyncio.sleep(60)  # 先让服务完全启动
+        while True:
+            try:
+                logger.info("后台测速开始...")
+                await _run_speed_check_for_all_users()
+                logger.info("后台测速完成")
+            except Exception as e:
+                logger.warning(f"后台测速异常: {e}")
+            await asyncio.sleep(7200)  # 2 小时
+
+    speed_task = asyncio.create_task(_speed_poll_loop())
     yield
+    speed_task.cancel()
+    try:
+        await speed_task
+    except asyncio.CancelledError:
+        pass
     logger.info("智能网关 已停止")
 
 # ============================================================
@@ -76,6 +102,8 @@ app.include_router(billing_router)
 app.include_router(routers_router)
 app.include_router(check_router)
 app.include_router(usage_router)
+app.include_router(aliases_router)
+app.include_router(traces_router)
 
 
 @app.get("/")

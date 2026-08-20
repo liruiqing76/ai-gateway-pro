@@ -37,7 +37,7 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
     """聚合统计: 总调用数 / 今日调用数 / 今日 token / 失败数"""
     session = get_session()
     try:
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         total = session.query(func.count(UsageLog.id)).filter_by(user_id=user.id).scalar() or 0
         today = (
             session.query(func.count(UsageLog.id))

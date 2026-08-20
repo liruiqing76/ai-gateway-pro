@@ -106,23 +106,26 @@ async def check_availability(
                 models = json.loads(models)
 
             checks = []
+            # 用已知渠道名列表精确匹配前缀, 而不是盲目 split
+            # 避免 "deepseek-ai/deepseek-v4-flash-0731" 被误解析
+            prov_names = sorted(prov_map.keys(), key=len, reverse=True)
             for prefixed in models:
-                # 解析渠道前缀: "NVIDIA-glm-5.2" -> name="NVIDIA", model="glm-5.2"
-                if "-" in prefixed:
-                    parts = prefixed.split("-", 1)
-                    prov_name = parts[0]
-                    model_name = parts[1]
-                else:
-                    prov_name = ""
-                    model_name = prefixed
+                # 尝试匹配已知渠道名前缀
+                prov_name = ""
+                model_name = prefixed
+                for pn in prov_names:
+                    if prefixed.startswith(pn + "-"):
+                        prov_name = pn
+                        model_name = prefixed[len(pn) + 1:]
+                        break
 
                 prov = prov_map.get(prov_name)
                 if not prov:
                     checks.append(CheckResult(
                         model=prefixed,
-                        provider=prov_name,
+                        provider=prov_name or "未知",
                         available=False,
-                        error="渠道不存在或已禁用",
+                        error="渠道不存在或已禁用" if prov_name else "无渠道前缀, 无法测速",
                     ))
                     continue
 

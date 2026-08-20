@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -190,3 +191,316 @@ class TestTemplates:
         assert len(providers) == 1
         assert providers[0]["name"] == "魔搭 (ModelScope)"
         assert len(providers[0]["models"]) > 10
+
+
+class TestFetchModels:
+    """自动拉取上游模型 / 刷新 / 连通性测试"""
+
+    def test_fetch_upstream_models_success(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        async def fake_get(base_url, api_key):
+            return ["b-model", "a-model"]
+        monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
+
+        resp = client.post("/api/providers/fetch-models", json={
+            "base_url": "https://example.com/v1",
+            "api_key": "key",
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["models"] == ["b-model", "a-model"]
+        assert resp.json()["count"] == 2
+
+    def test_fetch_upstream_failure_returns_502(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        from fastapi import HTTPException
+
+        async def fail_get(base_url, api_key):
+            raise HTTPException(status_code=502, detail="拉取模型失败: HTTP 401")
+        monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
+
+        resp = client.post("/api/providers/fetch-models", json={
+            "base_url": "https://example.com/v1",
+            "api_key": "bad",
+        }, headers=auth_headers)
+        assert resp.status_code == 502
+
+    def test_create_provider_auto_fetch_models(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        async def fake_get(base_url, api_key):
+            return ["fetched-model-1"]
+        monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
+
+        resp = client.post("/api/providers", json={
+            "name": "AutoFetch", "base_url": "https://auto.example/v1",
+            "api_key": "key", "auto_fetch": True, "models": [],
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["models_count"] == 1
+        assert data["models_fetched"] is True
+        assert "已自动获取" in data["msg"]
+
+    def test_create_provider_auto_fetch_failure_does_not_block(self, auth_headers, monkeypatch):
+        """拉取失败不阻塞渠道创建"""
+        import backend.api.providers as pm
+        from fastapi import HTTPException
+
+        async def fail_get(base_url, api_key):
+            raise HTTPException(status_code=502, detail="拉取模型失败")
+        monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
+
+        resp = client.post("/api/providers", json={
+            "name": "NoFetch", "base_url": "https://nofetch.example/v1",
+            "api_key": "key", "auto_fetch": True, "models": [],
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["models_count"] == 0
+
+    def test_create_provider_auto_fetch_generates_routers(self, auth_headers, monkeypatch):
+        """创建渠道后自动重建默认路由组(含中文组名 quick)"""
+        import backend.api.providers as pm
+        async def fake_get(base_url, api_key):
+            return ["qwen-8b-fp8", "glm-5.2"]
+        monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
+
+        resp = client.post("/api/providers", json={
+            "name": "RouterGen", "base_url": "https://gen.example/v1",
+            "api_key": "key", "models": [],
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+
+        # 路由组已按三分类生成,请求 quick 组可达
+        r = client.get("/api/routers", headers=auth_headers)
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert isinstance(data, dict)
+        assert "quick" in data
+
+    def test_refresh_models_endpoint(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        from fastapi import HTTPException
+
+        # 先建一个渠道
+        resp = client.post("/api/providers", json={
+            "name": "Refresher", "base_url": "https://refresher.example/v1",
+            "api_key": "key", "models": ["old-model"], "auto_fetch": False,
+        }, headers=auth_headers)
+        pid = resp.json()["id"]
+
+        async def fake_get(base_url, api_key):
+            return ["new-model-1", "new-model-2"]
+        monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
+
+        r = client.post(f"/api/providers/{pid}/refresh-models", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["models_count"] == 2
+
+        # 库中模型已更新
+        r = client.get(f"/api/providers/{pid}", headers=auth_headers)
+        assert r.json()["models"] == ["new-model-1", "new-model-2"]
+
+    def test_refresh_models_missing_provider_404(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        async def fake_get(base_url, api_key):
+            return []
+        monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
+
+        r = client.post("/api/providers/99999/refresh-models", headers=auth_headers)
+        assert r.status_code == 404
+
+    def test_update_provider_changes_key_and_models(self, auth_headers):
+        resp = client.post("/api/providers", json={
+            "name": "Updater", "base_url": "https://updater.example/v1",
+            "api_key": "old-key", "models": ["m1"], "auto_fetch": False,
+        }, headers=auth_headers)
+        pid = resp.json()["id"]
+
+        r = client.put(f"/api/providers/{pid}", json={
+            "name": "Updated", "api_key": "new-key", "models": ["m2", "m3"],
+        }, headers=auth_headers)
+        assert r.status_code == 200
+
+        r = client.get(f"/api/providers/{pid}", headers=auth_headers)
+        data = r.json()
+        assert data["name"] == "Updated"
+        assert data["api_key"] == "new-key"
+        assert data["models"] == ["m2", "m3"]
+
+    def test_update_provider_404(self, auth_headers):
+        r = client.put("/api/providers/99999", json={"name": "X"}, headers=auth_headers)
+        assert r.status_code == 404
+
+    def test_test_provider_success(self, monkeypatch):
+        import httpx
+        import backend.api.providers as pm
+
+        class FakeResp:
+            status_code = 200
+            text = ""
+
+        async def fake_post(self, url, json, headers):
+            return FakeResp()
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+        r = client.post("/api/providers/test", json={
+            "base_url": "https://test.example/v1", "api_key": "key",
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+    def test_test_provider_http_error(self, monkeypatch):
+        import httpx
+        import backend.api.providers as pm
+
+        class FakeResp:
+            status_code = 401
+            text = "unauthorized"
+
+        async def fake_post(self, url, json, headers):
+            return FakeResp()
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+        r = client.post("/api/providers/test", json={
+            "base_url": "https://test.example/v1", "api_key": "bad",
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"] is False
+        assert "401" in r.json()["msg"]
+
+    def test_test_provider_connection_error(self, monkeypatch):
+        import httpx
+        import backend.api.providers as pm
+
+        async def fake_post(self, url, json, headers):
+            raise httpx.ConnectError("refused")
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+        r = client.post("/api/providers/test", json={
+            "base_url": "https://test.example/v1", "api_key": "key",
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"] is False
+        assert "连接失败" in r.json()["msg"]
+
+
+class TestFetchUpstreamErrors:
+    """上游模型拉取的真实 HTTP 分支: 非200/格式异常/空列表/网络错误"""
+
+    def _run(self, coro):
+        """在新事件循环中运行协程(兼容 py3.14 主线程无事件循环)"""
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def _patch_httpx_get(self, monkeypatch, responses):
+        """responses: list of (status, json) 依次返回"""
+        import httpx
+        import backend.api.providers as pm
+
+        calls = {"n": 0}
+
+        class FakeResp:
+            def __init__(self, status, data):
+                self.status_code = status
+                self._json = data
+                self.text = str(data)
+
+            def json(self):
+                return self._json
+
+        async def fake_get(self, url, headers):
+            idx = calls["n"]
+            calls["n"] += 1
+            return FakeResp(*responses[idx % len(responses)])
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    def test_fetch_http_401_all_fail(self, monkeypatch, auth_headers):
+        """两个候选 URL 都非 200 → 502 拉取失败"""
+        import backend.api.providers as pm
+        self._patch_httpx_get(monkeypatch, [(401, {"error": "no"}), (401, {"error": "no"})])
+        with pytest.raises(HTTPException) as ei:
+            self._run(pm.fetch_upstream_models("https://x.com", "bad-key"))
+        assert "HTTP 401" in str(ei.value)
+
+    def test_fetch_non_list_response(self, monkeypatch, auth_headers):
+        """返回了 JSON 但不是 list → 尝试下一个 URL"""
+        import backend.api.providers as pm
+        # base_url 不带 /v1 → 尝试两个 URL: /models 与 /v1/models
+        self._patch_httpx_get(monkeypatch, [
+            (200, {"data": "not-a-list"}),
+            (200, {"data": [{"id": "ok-model"}, {"id": "beta-model"}]}),
+        ])
+        result = self._run(pm.fetch_upstream_models("https://x.com", "key"))
+        assert result == ["beta-model", "ok-model"]  # 排序后的 ID 列表
+
+    def test_fetch_empty_list_fails(self, monkeypatch, auth_headers):
+        """两个 URL 都返回空列表 → 502"""
+        import backend.api.providers as pm
+        self._patch_httpx_get(monkeypatch, [(200, {"data": []}), (200, [])])
+        with pytest.raises(HTTPException) as ei:
+            self._run(pm.fetch_upstream_models("https://x.com/v1", "key"))
+        assert "空模型列表" in str(ei.value)
+
+    def test_fetch_network_error_fails(self, monkeypatch, auth_headers):
+        """网络异常 → 502"""
+        import httpx
+        import backend.api.providers as pm
+
+        async def fake_get(self, url, headers):
+            raise httpx.ConnectError("timeout")
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+        with pytest.raises(HTTPException) as ei:
+            self._run(pm.fetch_upstream_models("https://x.com/v1", "key"))
+        assert "timeout" in str(ei.value)
+
+    def test_create_provider_fetch_error_not_blocking(self, auth_headers, monkeypatch):
+        """创建渠道时自动拉取失败 → 渠道仍创建成功(空模型列表)"""
+        import backend.api.providers as pm
+
+        async def fail_get(base_url, api_key):
+            raise HTTPException(status_code=502, detail="拉取模型失败")
+        monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
+
+        resp = client.post("/api/providers", json={
+            "name": "BlkFail", "base_url": "https://blk.example/v1",
+            "api_key": "key", "auto_fetch": True, "models": [],
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["msg"].startswith("渠道添加成功")
+
+    def test_apply_template_fetch_error_not_blocking(self, auth_headers, monkeypatch):
+        """模板模型为空时拉取失败 → 模板仍应用(空模型列表)"""
+        import backend.api.providers as pm
+        import json
+        from pathlib import Path
+
+        # 用临时模板文件: 该模板无预设模型 → 触发自动拉取
+        tmp_tpl = Path(__file__).parent / "tmp_tpl.json"
+        tmp_tpl.write_text(json.dumps([
+            {"name": "EmptyModelTPL", "base_url": "https://empty.example/v1",
+             "models": [], "free_only": True}
+        ]), encoding="utf-8")
+        monkeypatch.setattr(pm, "TEMPLATES_FILE", tmp_tpl)
+
+        async def fail_get(base_url, api_key):
+            raise HTTPException(status_code=502, detail="拉取模型失败: 超时")
+        monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
+
+        resp = client.post("/api/providers/apply-template", json={
+            "template_name": "EmptyModelTPL",
+            "api_key": "key",
+        }, headers=auth_headers)
+        try:
+            tmp_tpl.unlink()
+        except OSError:
+            pass
+        assert resp.status_code == 200
+        assert resp.json()["models_count"] == 0

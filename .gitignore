@@ -36,6 +36,7 @@ desktop/checkin/*_config.json
 .workbuddy/
 .merkle-snapshot.json
 .codeartsdoer/
+.zcode/
 
 # 根目录历史杂项文件（形如 =0.19.0 的残留）
 /=[0-9.]*

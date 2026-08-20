@@ -32,6 +32,13 @@ class TestParsePipeline:
     def test_no_slash_returns_none(self):
         assert parse_pipeline("relay:大模型") is None
 
+    def test_too_many_relay_stages_none(self):
+        """relay 超过 5 级 → 拒绝"""
+        assert parse_pipeline("relay:A/B/C/D/E/F") is None
+
+    def test_empty_string_none(self):
+        assert parse_pipeline("") is None
+
     def test_more_than_two_stages_relay(self):
         result = parse_pipeline("relay:A/B/C")
         assert result is not None
