@@ -17,6 +17,7 @@ from backend.auth.security import (
 )
 from backend.auth.middleware import get_current_user_from_jwt
 from backend.models import get_session, User
+from backend.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -62,6 +63,22 @@ async def register(data: RegisterIn):
         if session.query(User).filter_by(username=data.username).first():
             raise HTTPException(status_code=400, detail="用户名已被占用")
 
+        # ── 商业化单机单账号限制: 本机机器码已被其他账号占用则禁止再注册 ──
+        machine_code = ""
+        if settings.LICENSE_ENABLED:
+            from backend.core.machine import get_machine_code
+            machine_code = get_machine_code()
+            if machine_code:
+                owner = session.query(User).filter(
+                    User.machine_code == machine_code
+                ).first()
+                if owner:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"本机已绑定账号 {owner.username or owner.email}，一台设备只能注册一个账号。"
+                               f"如需更换账号请联系客服解绑。",
+                    )
+
         # 创建用户
         user = User(
             username=data.username,
@@ -73,6 +90,7 @@ async def register(data: RegisterIn):
             quota_daily=1000,
             quota_used_today=0,
             quota_reset_at=datetime.now() + timedelta(days=1),
+            machine_code=machine_code or None,  # 绑定额定机器码
         )
 
         # 邀请码处理
@@ -120,7 +138,24 @@ async def login(data: LoginIn):
 
         # 成功
         reset_login_failures(user)
-        session.commit()
+
+        # ── 商业化设备绑定校验(登录时执行, 不一致即锁定) ──
+        if settings.LICENSE_ENABLED:
+            from backend.core.machine import get_machine_code
+            from backend.core.license import full_verify, bind_machine_to_account
+            hw = get_machine_code()
+            res = await full_verify(hw, user.email)
+            if not res.ok:
+                session.rollback()
+                raise HTTPException(
+                    status_code=423 if res.locked else 403,
+                    detail=res.message or "设备绑定校验失败",
+                )
+            bind_res = await bind_machine_to_account(user.email, hw)
+            if not bind_res.ok:
+                session.rollback()
+                raise HTTPException(status_code=423, detail=bind_res.message)
+            session.commit()
 
         return {
             "user": user.to_dict(),

@@ -28,6 +28,7 @@ from backend.api.usage import router as usage_router
 from backend.api.aliases import router as aliases_router
 from backend.api.traces import router as traces_router
 from backend.api.chats import router as chats_router
+from backend.api.license import router as license_router
 
 # 日志
 logging.basicConfig(
@@ -106,6 +107,7 @@ app.include_router(usage_router)
 app.include_router(aliases_router)
 app.include_router(traces_router)
 app.include_router(chats_router)
+app.include_router(license_router)
 
 
 @app.get("/")

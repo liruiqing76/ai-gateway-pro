@@ -29,6 +29,7 @@ async def get_current_user_from_jwt(
         user = session.query(User).filter_by(id=user_id, is_active=True).first()
         if not user:
             raise HTTPException(status_code=401, detail="用户不存在或已禁用")
+        _check_license_lock(user)
         request.state.user = user
         return user
     finally:
@@ -49,10 +50,17 @@ async def get_current_user_from_api_key(
         ).first()
         if not user:
             raise HTTPException(status_code=401, detail="API Key 无效")
+        _check_license_lock(user)
         request.state.user = user
         return user
     finally:
         session.close()
+
+
+def _check_license_lock(user: User) -> None:
+    """整体锁定: 账号被远程/本地标记为 license_locked 时, 拒绝一切功能访问"""
+    if getattr(user, "license_locked", False):
+        raise HTTPException(status_code=423, detail="该账号已被锁定，请联系客服")
 
 
 async def get_current_user_any(
@@ -71,6 +79,7 @@ async def get_current_user_any(
                 id=int(payload.get("sub", 0)), is_active=True
             ).first()
             if user:
+                _check_license_lock(user)
                 request.state.user = user
                 return user
         # 2) API Key
@@ -78,6 +87,7 @@ async def get_current_user_any(
             api_key=credentials.credentials, is_active=True
         ).first()
         if user:
+            _check_license_lock(user)
             request.state.user = user
             return user
         raise HTTPException(status_code=401, detail="凭证无效")

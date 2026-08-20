@@ -66,5 +66,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    # ---- 商业化绑定 / 远程授权 ----
+    # 机器码采集开关; False 时(如非 Windows/CI)跳过硬件绑定, 不锁定
+    LICENSE_ENABLED: bool = True
+    # 远程授权服务器地址。为空 = 仅本地校验(机器码↔账号); 配置后每次登录/启动联网向
+    # LICENSE_SERVER_URL/{verify} 校验绑定与封禁状态, 实现远程锁定。
+    # 远程接口约定: POST {LICENSE_SERVER_URL}/verify  body={"machine_code":..,"email":..}
+    #              返回 {"ok":bool,"locked":bool?,"message":str?}
+    LICENSE_SERVER_URL: str = ""
+    # 远程校验超时(秒)
+    LICENSE_SERVER_TIMEOUT: int = 5
+
 
 settings = Settings()

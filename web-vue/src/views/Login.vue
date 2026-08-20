@@ -63,11 +63,20 @@ async function submit() {
     localStorage.setItem('gw_api_key', resp.data.api_key || '')
     localStorage.setItem('gw_username', resp.data.user?.username || form.value.email)
     localStorage.setItem('gw_email', form.value.email)
-    ElMessage.success(mode.value === 'login' ? '登录成功' : '注册成功')
+    if (mode.value === 'register') {
+      ElMessage.success('注册成功，本机设备已绑定该账号')
+    } else {
+      ElMessage.success('登录成功')
+    }
     window.location.hash = '#/dashboard'
     window.location.reload()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '操作失败')
+    const detail = e.response?.data?.detail
+    if (Array.isArray(detail)) {
+      ElMessage.error(detail[0]?.msg || '校验失败')
+    } else {
+      ElMessage.error(detail || '操作失败')
+    }
   } finally { loading.value = false }
 }
 </script>

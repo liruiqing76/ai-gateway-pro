@@ -43,6 +43,10 @@ class User(Base):
     login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
+    # 商业化绑定: 本机机器码(HWID), 全局唯一 — 一台机器只能绑定一个账号
+    machine_code = Column(String(128), nullable=True, unique=True, index=True)
+    # 远程锁定状态(由授权服务器下发): locked=True 时整体锁定
+    license_locked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     last_login_at = Column(DateTime, nullable=True)
 
@@ -61,6 +65,8 @@ class User(Base):
             "quota_used_today": self.quota_used_today,
             "email_verified": self.email_verified,
             "is_active": self.is_active,
+            "machine_code": self.machine_code,
+            "license_locked": self.license_locked,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
         }
@@ -341,10 +347,41 @@ def _get_engine():
 
 
 def create_tables():
-    """同步创建所有表"""
+    """同步创建所有表 + 轻量迁移(为已存在的库补充新增列)"""
     engine = _get_engine()
     Base.metadata.create_all(engine)
+    _migrate_columns(engine)
     return engine
+
+
+def _migrate_columns(engine):
+    """为已存在的表补充后续新增的列(SQLite ALTER TABLE ADD COLUMN)"""
+    import sqlalchemy as sa
+    from sqlalchemy import inspect
+    # 需要确保存在的 列 -> 类型定义(用于 DDL)
+    migrations = {
+        "users": {
+            "machine_code": "VARCHAR(128)",
+            "license_locked": "BOOLEAN",
+        },
+    }
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        for table, cols in migrations.items():
+            if table not in tables:
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            with engine.begin() as conn:
+                for col, coltype in cols.items():
+                    if col not in existing:
+                        conn.execute(sa.text(
+                            f'ALTER TABLE {table} ADD COLUMN {col} {coltype}'
+                        ))
+    except Exception:
+        # 迁移失败不影响启动
+        import logging
+        logging.getLogger("gateway").exception("DB column migration failed")
 
 
 def get_session():
