@@ -24,6 +24,18 @@ def _resolve_checkin_dir() -> Path:
 
 
 CHECKIN_DIR = _resolve_checkin_dir()
+
+
+def get_state_dir() -> Path:
+    """签到状态(标记/日志)的持久化目录。
+    打包后必须放 exe 旁(data/checkin_state), 否则写在 _MEIPASS 临时目录,
+    客户端一重启"今日已签"就丢; 源码模式沿用 desktop/checkin。"""
+    if getattr(sys, "frozen", False):
+        d = Path(sys.executable).resolve().parent / "data" / "checkin_state"
+    else:
+        d = Path(__file__).resolve().parent / "checkin"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 SCRIPTS = {
     "workbuddy": "workbuddy_checkin.py",
     "trae": "trae_checkin.py",
@@ -48,8 +60,8 @@ class CheckinScheduler:
 
     DEFAULT_CONFIG = {
         "enabled": True,          # 总开关
-        "workbuddy_time": "09:00",
-        "trae_time": "09:05",
+        "workbuddy_time": "02:00",
+        "trae_time": "02:05",
         "last_run": None,
     }
 
@@ -95,7 +107,7 @@ class CheckinScheduler:
                 continue
             time_key = f"{app}_time"
             if self.config.get("enabled"):
-                h, m = parse_time_str(str(self.config.get(time_key, "09:00")))
+                h, m = parse_time_str(str(self.config.get(time_key, "02:00")))
                 try:
                     job.reschedule("cron", hour=h, minute=m)
                 except Exception:
@@ -130,6 +142,8 @@ class CheckinScheduler:
         script = CHECKIN_DIR / SCRIPTS[app]
         if not script.exists():
             return "脚本不存在"
+        # 标记/日志写持久目录, 脚本通过环境变量感知
+        os.environ["CHECKIN_STATE_DIR"] = str(get_state_dir())
         try:
             if getattr(sys, "frozen", False):
                 import runpy
@@ -144,6 +158,7 @@ class CheckinScheduler:
                 [sys.executable, str(script)],
                 capture_output=True, text=True, timeout=90,
                 cwd=str(script.parent),
+                encoding="utf-8", errors="replace",  # 子进程输出可能含✅等emoji, GBK会炸
             )
             out = (r.stdout + r.stderr)[-800:]
             return out if out else "签到执行完成"

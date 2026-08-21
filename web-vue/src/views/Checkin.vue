@@ -109,19 +109,22 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const isDesktop = ref(typeof window.pywebview !== 'undefined')
-const checkinApi = window.pywebview?.api?.checkin
+// 不能在这里一次性取快照: pywebview 的 JS 桥是异步注入的, 页面先于桥就绪时
+// window.pywebview?.api?.checkin 会是 undefined, 点击就静默 return(表现为"没反应")。
+// 改为每次调用前动态获取。
+const getCheckinApi = () => window.pywebview?.api?.checkin
 const wb = ref({ signed: false, date: '' })
 const trae = ref({ signed: false, date: '' })
 const running = ref('')
 const log = ref('')
 const schedule = ref({
   enabled: true,
-  workbuddy_time: '09:00',
-  trae_time: '09:05',
+  workbuddy_time: '02:00',
+  trae_time: '02:05',
   next_run: null,
 })
-const wbTime = ref('09:00')
-const traeTime = ref('09:05')
+const wbTime = ref('02:00')
+const traeTime = ref('02:05')
 
 function formatTime(iso) {
   if (!iso) return '—'
@@ -130,6 +133,7 @@ function formatTime(iso) {
 }
 
 async function refresh() {
+  const checkinApi = getCheckinApi()
   if (!isDesktop.value || !checkinApi) return
   try {
     const status = await checkinApi.get_status()
@@ -147,12 +151,13 @@ async function refresh() {
 }
 
 async function saveSchedule() {
+  const checkinApi = getCheckinApi()
   if (!isDesktop.value || !checkinApi) return
   try {
     const data = {
       enabled: schedule.value.enabled,
-      workbuddy_time: wbTime.value || '09:00',
-      trae_time: traeTime.value || '09:05',
+      workbuddy_time: wbTime.value || '02:00',
+      trae_time: traeTime.value || '02:05',
     }
     const resp = await checkinApi.save_schedule(JSON.stringify(data))
     const d = JSON.parse(resp)
@@ -169,6 +174,7 @@ async function saveSchedule() {
 }
 
 async function run(app) {
+  const checkinApi = getCheckinApi()
   if (!checkinApi) return
   running.value = app
   log.value = '签到中...'

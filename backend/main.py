@@ -31,6 +31,7 @@ from backend.api.traces import router as traces_router
 from backend.api.chats import router as chats_router
 from backend.api.license import router as license_router
 from backend.api.experience import router as experience_router
+from backend.api.free_sources import router as free_sources_router
 
 # 日志
 logging.basicConfig(
@@ -108,12 +109,73 @@ async def lifespan(app: FastAPI):
     speed_task = asyncio.create_task(_speed_poll_loop())
     summary_task = asyncio.create_task(_daily_summary_loop())
     summary_task = asyncio.create_task(_daily_summary_loop())
+
+    # 免费源自动同步: 对齐 CX-AIRouter 的"每6小时扫描全网免费源"
+    from backend.core.free_sources import sync_free_sources
+
+    async def _free_source_sync_loop():
+        if not settings.FREE_SOURCE_AUTO_SYNC:
+            logger.info("免费源自动同步未启用")
+            return
+        await asyncio.sleep(settings.FREE_SOURCE_SYNC_START_DELAY)
+        while True:
+            try:
+                r = sync_free_sources()
+                logger.info(
+                    "免费源同步完成: 模板%d个, 新增%s, 更新%s, 失败%s",
+                    r["total_templates"], r["added"], r["updated"], r["failed_sources"],
+                )
+            except Exception as e:
+                logger.warning("免费源同步异常: %s", e)
+            await asyncio.sleep(settings.FREE_SOURCE_SYNC_HOURS * 3600)
+
+    sync_task = asyncio.create_task(_free_source_sync_loop())
+
+    # OpenCode Zen 免费模型: 自动发现同步 + 持续健康检测
+    from backend.core.zen_sources import sync_zen_free_models, health_check_zen_models
+
+    async def _zen_sync_loop():
+        if not settings.ZEN_AUTO_SYNC:
+            logger.info("opencode 免费模型同步未启用")
+            return
+        await asyncio.sleep(180)  # 等服务稳定
+        while True:
+            try:
+                r = sync_zen_free_models()
+                logger.info("opencode 免费模型同步: 发现%d个, 可用%d个, 不可用%d",
+                            r.get("total_free", 0), len(r.get("usable", [])),
+                            len(r.get("unusable", {})))
+            except Exception as e:
+                logger.warning("opencode 免费模型同步异常: %s", e)
+            await asyncio.sleep(settings.ZEN_SYNC_HOURS * 3600)
+
+    async def _zen_health_loop():
+        if not settings.ZEN_AUTO_SYNC:
+            return
+        await asyncio.sleep(480)  # 首次健康检测等同步完成后
+        while True:
+            try:
+                r = health_check_zen_models()
+                if r.get("removed"):
+                    logger.info("opencode 健康检测: 移出不可用模型 %s", r["removed"])
+            except Exception as e:
+                logger.warning("opencode 健康检测异常: %s", e)
+            await asyncio.sleep(settings.ZEN_HEALTH_CHECK_MINUTES * 60)
+
+    zen_sync_task = asyncio.create_task(_zen_sync_loop())
+    zen_health_task = asyncio.create_task(_zen_health_loop())
     yield
     speed_task.cancel()
     summary_task.cancel()
+    sync_task.cancel()
+    zen_sync_task.cancel()
+    zen_health_task.cancel()
     try:
         await speed_task
         await summary_task
+        await sync_task
+        await zen_sync_task
+        await zen_health_task
     except asyncio.CancelledError:
         pass
     logger.info("智能网关 已停止")
@@ -156,6 +218,7 @@ app.include_router(traces_router)
 app.include_router(chats_router)
 app.include_router(license_router)
 app.include_router(experience_router)
+app.include_router(free_sources_router)
 
 
 @app.get("/")

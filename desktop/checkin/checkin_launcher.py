@@ -11,6 +11,15 @@ WorkBuddy + Trae 自动签到（集成版） + 一键配置导出
 import os, sys, json, time, ctypes, subprocess, threading, datetime, urllib.request, urllib.error
 from pathlib import Path
 
+# 输出编码加固: 中文 Windows 控制台默认 GBK, 无法编码 ✅/⚠️ 等 emoji,
+# 直接 print 会抛 UnicodeEncodeError 并污染签到日志。强制 UTF-8 + 容错输出。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 try:
     import pyautogui, pygetwindow as gw
     from PIL import Image

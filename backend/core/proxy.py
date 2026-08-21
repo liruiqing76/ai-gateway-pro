@@ -126,10 +126,10 @@ async def forward_non_stream(
     """转发非流式请求,返回 (response_dict, error)"""
     key = f"{provider.name}||{model}"
     url = provider.base_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    # 免 key 渠道(如 opencode zen 免费档)不带 Authorization, 否则空 Bearer 会被上游拒
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     req_body = json.loads(json.dumps(body))
     # 始终用去掉前缀的真实模型名发给上游
@@ -194,10 +194,10 @@ async def forward_stream(
     """
     key = f"{provider.name}||{model}"
     url = provider.base_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    # 免 key 渠道(如 opencode zen 免费档)不带 Authorization, 否则空 Bearer 会被上游拒
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     req_body = json.loads(json.dumps(body))
     req_body["model"] = MODEL_ALIASES.get(model, model)
@@ -280,7 +280,9 @@ CONTEXT_LIMITS: dict[str, int] = {
     "deepseek-ai/DeepSeek-V4-Flash-0731": 131072,
     "deepseek-ai/DeepSeek-V4-Pro": 131072,
     "glm-5.2": 1048576,
+    "z-ai/glm-5.2": 1048576,  # NVIDIA 平台的智谱 GLM-5.2(与 glm-5.2 同型号)
     "ZhipuAI/GLM-5.2": 1048576,
+    "deepseek-v4-flash": 131072,  # SenseNova / AMD 等短名
     "moonshotai/kimi-k2.6": 262144,
     "minimaxai/minimax-m3": 262144,
     "MiniMax/MiniMax-M3": 262144,
@@ -294,12 +296,31 @@ CONTEXT_LIMITS: dict[str, int] = {
     "Tencent-Hunyuan/Hy3": 131072,
     "nvidia/nemotron-3-ultra-550b-a55b": 131072,
     "nvidia/nemotron-3-super-120b-a12b": 131072,
+    "nvidia/nemotron-nano-12b-v2-vl": 131072,
+    "nvidia/llama-3.1-nemotron-nano-vl-8b-v1": 131072,
+    "meta/llama-3.2-11b-vision-instruct": 131072,
     "meta/llama-3.2-90b-vision-instruct": 131072,
+    "microsoft/phi-3-vision-128k-instruct": 131072,
+}
+
+# 大小写不敏感的查找表: 不同平台写法的模型名(大小写/前缀不同)也能命中
+_CONTEXT_LIMITS_LOWER: dict[str, int] = {
+    k.lower(): v for k, v in CONTEXT_LIMITS.items()
 }
 
 
 def get_context_length(model: str) -> int:
-    return CONTEXT_LIMITS.get(model, 32768)
+    """返回模型上下文长度。三档兜底: 精确名 → 短名(去平台前缀) → 忽略大小写。"""
+    if model in CONTEXT_LIMITS:
+        return CONTEXT_LIMITS[model]
+    v = _CONTEXT_LIMITS_LOWER.get(model.lower())
+    if v is not None:
+        return v
+    short = model.rsplit("/", 1)[-1]
+    v = _CONTEXT_LIMITS_LOWER.get(short.lower())
+    if v is not None:
+        return v
+    return 32768
 
 
 

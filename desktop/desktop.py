@@ -27,7 +27,7 @@ import webview
 import uvicorn
 
 # 调度器(桌面模式)
-from scheduler import CheckinScheduler, CHECKIN_DIR
+from scheduler import CheckinScheduler, CHECKIN_DIR, get_state_dir
 
 if getattr(sys, "frozen", False):
     BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -70,14 +70,14 @@ class CheckinAPI:
         if self._scheduler:
             result["schedule"] = {
                 "enabled": self._scheduler.config.get("enabled", True),
-                "workbuddy_time": self._scheduler.config.get("workbuddy_time", "09:00"),
-                "trae_time": self._scheduler.config.get("trae_time", "09:05"),
+                "workbuddy_time": self._scheduler.config.get("workbuddy_time", "02:00"),
+                "trae_time": self._scheduler.config.get("trae_time", "02:05"),
                 "next_run": self._scheduler.next_run(),
             }
         return json.dumps(result, ensure_ascii=False)
 
     def save_schedule(self, data: str) -> str:
-        """保存定时配置: {"enabled": true, "workbuddy_time": "09:00", ...}"""
+        """保存定时配置: {"enabled": true, "workbuddy_time": "02:00", ...}"""
         if not self._scheduler:
             return json.dumps({"ok": False, "error": "调度器未初始化"})
         try:
@@ -98,9 +98,8 @@ class CheckinAPI:
         return json.dumps(results)
 
     def _read_last(self, filename: str) -> str:
-        # 标记文件(wb_last_checkin.txt/last_checkin.txt)由签到脚本写在脚本自身目录,
-        # 必须与 CHECKIN_DIR 一致; 原来读 BASE/checkin(项目根/_MEIPASS/checkin)永远找不到
-        path = CHECKIN_DIR / filename
+        # 标记文件读持久目录(打包后= exe旁 data/checkin_state), 与脚本写入位置一致
+        path = get_state_dir() / filename
         if path.exists():
             return path.read_text().strip()
         return ""
@@ -109,6 +108,8 @@ class CheckinAPI:
         if not script.exists():
             return "脚本不存在"
         try:
+            # 标记/日志写持久目录, 脚本通过环境变量感知
+            os.environ["CHECKIN_STATE_DIR"] = str(get_state_dir())
             # 打包后 python 解释器不可用，签到脚本直接内嵌运行
             if getattr(sys, "frozen", False):
                 import runpy
@@ -123,6 +124,7 @@ class CheckinAPI:
                 [sys.executable, str(script)],
                 capture_output=True, text=True, timeout=60,
                 cwd=str(script.parent),
+                encoding="utf-8", errors="replace",  # 子进程输出可能含✅等emoji, GBK会炸
             )
             return (r.stdout + r.stderr)[-500:]
         except subprocess.TimeoutExpired:

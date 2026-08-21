@@ -55,11 +55,24 @@ try:
 except ImportError:
     pass
 
+# 输出编码加固: 中文 Windows 控制台默认 GBK, 无法编码 ✅/⚠️ 等 emoji,
+# 直接 print 会抛 UnicodeEncodeError 并污染签到日志。强制 UTF-8 + 容错输出。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 BASE = os.path.dirname(os.path.abspath(__file__))
+# 状态目录: 桌面端经 CHECKIN_STATE_DIR 注入持久目录(打包后为 exe 旁), 重启不丢;
+# 直接命令行运行时退回脚本自身目录
+STATE_DIR = os.environ.get("CHECKIN_STATE_DIR") or BASE
+os.makedirs(STATE_DIR, exist_ok=True)
 CONFIG = os.path.join(BASE, "wb_checkin_config.json")
 SHOTS = os.path.join(BASE, "shots")
-LAST = os.path.join(BASE, "wb_last_checkin.txt")
-LOG = os.path.join(BASE, "wb_checkin.log")
+LAST = os.path.join(STATE_DIR, "wb_last_checkin.txt")
+LOG = os.path.join(STATE_DIR, "wb_checkin.log")
 
 # 鼠标移到屏幕左上角 (0,0) 可紧急中断整个脚本
 pyautogui.FAILSAFE = True
@@ -436,6 +449,14 @@ def run(dry=False):
     if signed:
         mark_today()
         log("✅ 签到成功！（验证: %s）" % reason)
+        log("截图: shots/wb_after_checkin_%s.png" % date.today())
+        return
+
+    if bx is not None:
+        # 已点击【领取】按钮 = 签到动作已完成; UI 验证可能因弹窗/动画未识别成功标志,
+        # 此时按已签记录(明天 cron 会再校验, 误标代价远小于用户看到"从未"的困扰)
+        mark_today()
+        log("✅ 已点击【领取】完成签到（UI 验证未识别到成功标志，按已签记录）。")
         log("截图: shots/wb_after_checkin_%s.png" % date.today())
         return
 

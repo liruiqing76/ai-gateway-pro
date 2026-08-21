@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     CHECKIN_RETRY: int = 3
     CHECKIN_TIMEOUT: int = 30
 
+    # ---- 免费源自动同步 (对齐 CX-AIRouter 的"每6小时扫描全网免费源") ----
+    # 定时把外部免费源清单(JSON)拉取下来, 与本地 provider_templates.json 合并,
+    # 新增的免费服务商自动进入"添加渠道"模板池。
+    FREE_SOURCE_AUTO_SYNC: bool = True
+    FREE_SOURCE_SYNC_HOURS: int = 6
+    FREE_SOURCE_SYNC_START_DELAY: int = 90
+
+    # ---- OpenCode Zen 免费模型: 自动发现 + 健康检测 ----
+    # 定时拉 models.dev 快照里的 zen 免费模型, 真实探测可用性后写进"opencode"渠道,
+    # 并持续重探保活: 连续失败 ZEN_PROBE_FAIL_LIMIT 次的模型自动移出渠道。
+    ZEN_AUTO_SYNC: bool = True
+    ZEN_SYNC_HOURS: int = 6
+    ZEN_HEALTH_CHECK_MINUTES: int = 60
+    ZEN_PROBE_FAIL_LIMIT: int = 2
+
     # ---- CORS ----
     CORS_ORIGINS: list = [
         "http://localhost",

@@ -65,11 +65,24 @@ try:
 except ImportError:
     pass
 
+# 输出编码加固: 中文 Windows 控制台默认 GBK, 无法编码 ✅/⚠️ 等 emoji,
+# 直接 print 会抛 UnicodeEncodeError 并污染签到日志。强制 UTF-8 + 容错输出。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 BASE = os.path.dirname(os.path.abspath(__file__))
+# 状态目录: 桌面端经 CHECKIN_STATE_DIR 注入持久目录(打包后为 exe 旁), 重启不丢;
+# 直接命令行运行时退回脚本自身目录
+STATE_DIR = os.environ.get("CHECKIN_STATE_DIR") or BASE
+os.makedirs(STATE_DIR, exist_ok=True)
 CONFIG = os.path.join(BASE, "checkin_config.json")
 SHOTS = os.path.join(BASE, "shots")
-LAST = os.path.join(BASE, "last_checkin.txt")
-LOG = os.path.join(BASE, "checkin.log")
+LAST = os.path.join(STATE_DIR, "last_checkin.txt")
+LOG = os.path.join(STATE_DIR, "checkin.log")
 
 # 鼠标移到屏幕左上角 (0,0) 可紧急中断整个脚本
 pyautogui.FAILSAFE = True

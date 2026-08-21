@@ -76,7 +76,7 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
     async def _vision_forward(stage_body):
         for prov, mdl in vision_cands:
             key_api = decrypted.get(prov.id, "")
-            if not key_api:
+            if not key_api and prov.api_key_encrypted:
                 continue
             t0 = time.time()
             resp, _err = await forward_non_stream(client, prov, key_api, mdl, stage_body)
@@ -115,7 +115,7 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
             try:
                 for prov, mdl in text_cands:
                     key_api = decrypted.get(prov.id, "")
-                    if not key_api:
+                    if not key_api and prov.api_key_encrypted:
                         continue
                     gen, _ = await forward_stream(client, prov, key_api, mdl, text_body)
                     if gen is None:
@@ -142,7 +142,7 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
     # 非流式
     for prov, mdl in text_cands:
         key_api = decrypted.get(prov.id, "")
-        if not key_api:
+        if not key_api and prov.api_key_encrypted:
             continue
         t0 = time.time()
         resp, _err = await forward_non_stream(client, prov, key_api, mdl, text_body)
@@ -297,7 +297,7 @@ async def proxy_chat(
                 return None
             for prov, mdl in cands:
                 key_api = decrypted.get(prov.id, "")
-                if not key_api:
+                if not key_api and prov.api_key_encrypted:
                     continue
                 stage_start = time.time()
                 resp_ns, _err = await forward_non_stream(client_orch, prov, key_api, mdl, stage_body)
@@ -318,7 +318,7 @@ async def proxy_chat(
                 return None, "无可用模型"
             for prov, mdl in cands:
                 key_api = decrypted.get(prov.id, "")
-                if not key_api:
+                if not key_api and prov.api_key_encrypted:
                     continue
                 gen, err = await forward_stream(client_orch, prov, key_api, mdl, stage_body)
                 if gen is not None:
@@ -531,7 +531,8 @@ async def proxy_chat(
 
     for provider, model in all_candidates:
         api_key = decrypted.get(provider.id, "")
-        if not api_key:
+        # 免 key 渠道(如 opencode zen)存的是空串, 放行; 有存储但解密失败/未配才算不合法
+        if not api_key and provider.api_key_encrypted:
             last_err = "API Key 不合法"
             continue
 
@@ -566,7 +567,7 @@ async def proxy_chat(
                     # primary 没发 [DONE] 就结束了, 尝试下一个候选
                     for fb_prov, fb_mdl in remaining:
                         fb_key_api = decrypted.get(fb_prov.id, "")
-                        if not fb_key_api:
+                        if not fb_key_api and fb_prov.api_key_encrypted:
                             continue
                         fb_key_cb = f"{fb_prov.name}||{fb_mdl}"
                         if circuit_breaker.is_open(fb_key_cb):

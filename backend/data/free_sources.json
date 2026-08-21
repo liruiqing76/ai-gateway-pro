@@ -1,0 +1,19 @@
+{
+  "sources": [
+    {
+      "name": "示例: 免费API目录(JSON格式)",
+      "url": "https://example.com/free-llm-api.json",
+      "enabled": false,
+      "_comment": "格式与 backend/data/provider_templates.json 一致: [{\"name\":..,\"base_url\":..,\"models\":[..],\"free_only\":true,\"signup_url\":..,\"config_url\":..,\"notes\":..,\"tags\":[..]}]。启用后每 FREE_SOURCE_SYNC_HOURS 小时自动拉取合并进模板池。"
+    }
+  ],
+  "meta": {
+    "last_sync_at": "2026-08-21 20:31:11",
+    "last_result": {
+      "total_templates": 9,
+      "added": [],
+      "updated": [],
+      "failed_sources": []
+    }
+  }
+}
