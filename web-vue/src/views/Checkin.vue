@@ -1,13 +1,13 @@
 <template>
   <div>
-    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">自动签到</h2>
+    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">{{ $t('checkin.autoCheckinTitle') }}</h2>
 
     <!-- 仅在 pywebview 壳内可见 -->
     <el-alert
       v-if="!isDesktop"
       type="warning"
-      title="此页面仅在桌面客户端内可用"
-      description="请运行 desktop.py 打开桌面客户端，这里会显示自动签到状态与定时设置。"
+      :title="$t('checkin.desktopOnlyTitle')"
+      :description="$t('checkin.desktopOnlyDesc')"
       :closable="false"
       style="margin-bottom:16px"
     />
@@ -16,38 +16,38 @@
     <el-card shadow="hover" style="margin-bottom:20px">
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span class="card-title">⏰ 定时签到</span>
+          <span class="card-title">{{ $t('checkin.scheduledCheckin') }}</span>
           <el-tag :type="schedule.enabled ? 'success' : 'info'" size="small">
-            {{ schedule.enabled ? '已启用' : '已停用' }}
+            {{ schedule.enabled ? $t('common.enabled') : $t('common.disabled') }}
           </el-tag>
         </div>
       </template>
 
       <el-form label-width="110px" style="max-width:480px">
-        <el-form-item label="总开关">
+        <el-form-item :label="$t('checkin.masterSwitch')">
           <el-switch v-model="schedule.enabled" @change="saveSchedule" />
         </el-form-item>
-        <el-form-item label="WorkBuddy 时间">
+        <el-form-item :label="$t('checkin.workbuddyTime')">
           <el-time-picker
             v-model="wbTime"
             format="HH:mm"
             value-format="HH:mm"
-            placeholder="选择签到时间"
+            :placeholder="$t('checkin.selectCheckinTime')"
             :disabled="!schedule.enabled"
             @change="saveSchedule"
           />
         </el-form-item>
-        <el-form-item label="Trae 时间">
+        <el-form-item :label="$t('checkin.traeTime')">
           <el-time-picker
             v-model="traeTime"
             format="HH:mm"
             value-format="HH:mm"
-            placeholder="选择签到时间"
+            :placeholder="$t('checkin.selectCheckinTime')"
             :disabled="!schedule.enabled"
             @change="saveSchedule"
           />
         </el-form-item>
-        <el-form-item label="下次执行">
+        <el-form-item :label="$t('checkin.nextRun')">
           <div style="font-size:13px;color:var(--gw-text-secondary)">
             WorkBuddy: {{ schedule.next_run?.workbuddy ? formatTime(schedule.next_run.workbuddy) : '—' }} &nbsp;·&nbsp;
             Trae: {{ schedule.next_run?.trae ? formatTime(schedule.next_run.trae) : '—' }}
@@ -55,7 +55,7 @@
         </el-form-item>
       </el-form>
       <div style="font-size:12px;color:#64748b">
-        💡 桌面客户端开着就会自动签到。如果不常开客户端，可配合 Windows 计划任务或开机自启。
+        {{ $t('checkin.tipDesktopAuto') }}
       </div>
     </el-card>
 
@@ -65,15 +65,15 @@
         <el-card shadow="hover">
           <template #header>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span class="card-title">🤖 WorkBuddy 签到</span>
-              <el-tag :type="wb.signed ? 'success' : 'info'" size="small">{{ wb.signed ? '今日已签' : '未签到' }}</el-tag>
+              <span class="card-title">{{ $t('checkin.workbuddyCardTitle') }}</span>
+              <el-tag :type="wb.signed ? 'success' : 'info'" size="small">{{ wb.signed ? $t('checkin.signedToday') : $t('checkin.notSigned') }}</el-tag>
             </div>
           </template>
           <div style="font-size:13px;color:var(--gw-text-secondary);margin-bottom:12px">
-            最后签到: {{ wb.date || '从未' }}
+            {{ $t('checkin.lastCheckin') }}: {{ wb.date || $t('common.never') }}
           </div>
           <el-button type="primary" :loading="running === 'workbuddy'" @click="run('workbuddy')" :disabled="wb.signed">
-            {{ wb.signed ? '✅ 今日已完成' : '立即签到' }}
+            {{ wb.signed ? $t('checkin.completedToday') : $t('checkin.checkinNow') }}
           </el-button>
         </el-card>
       </el-col>
@@ -83,23 +83,23 @@
         <el-card shadow="hover">
           <template #header>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span class="card-title">🎯 Trae Work 签到</span>
-              <el-tag :type="trae.signed ? 'success' : 'info'" size="small">{{ trae.signed ? '今日已签' : '未签到' }}</el-tag>
+              <span class="card-title">{{ $t('checkin.traeCardTitle') }}</span>
+              <el-tag :type="trae.signed ? 'success' : 'info'" size="small">{{ trae.signed ? $t('checkin.signedToday') : $t('checkin.notSigned') }}</el-tag>
             </div>
           </template>
           <div style="font-size:13px;color:var(--gw-text-secondary);margin-bottom:12px">
-            最后签到: {{ trae.date || '从未' }}
+            {{ $t('checkin.lastCheckin') }}: {{ trae.date || $t('common.never') }}
           </div>
           <el-button type="primary" :loading="running === 'trae'" @click="run('trae')" :disabled="trae.signed">
-            {{ trae.signed ? '✅ 今日已完成' : '立即签到' }}
+            {{ trae.signed ? $t('checkin.completedToday') : $t('checkin.checkinNow') }}
           </el-button>
         </el-card>
       </el-col>
     </el-row>
 
     <el-card shadow="hover" v-if="log">
-      <template #header><span class="card-title">签到日志</span></template>
-      <pre style="background:var(--gw-surface-secondary);padding:14px;border-radius:8px;font-size:12px;max-height:300px;overflow-y:auto;color:#cbd5e1;white-space:pre-wrap">{{ log }}</pre>
+      <template #header><span class="card-title">{{ $t('checkin.checkinLog') }}</span></template>
+      <pre style="background:var(--gw-muted);padding:14px;border-radius:8px;font-family:var(--gw-font-mono);font-size:12px;max-height:300px;overflow-y:auto;color:var(--gw-foreground);white-space:pre-wrap">{{ log }}</pre>
     </el-card>
   </div>
 </template>
@@ -107,6 +107,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const isDesktop = ref(typeof window.pywebview !== 'undefined')
 // 不能在这里一次性取快照: pywebview 的 JS 桥是异步注入的, 页面先于桥就绪时
@@ -146,7 +149,7 @@ async function refresh() {
       traeTime.value = d.schedule.trae_time
     }
   } catch (e) {
-    ElMessage.error('获取签到状态失败: ' + e)
+    ElMessage.error(t('checkin.getStatusFailed') + e)
   }
 }
 
@@ -162,14 +165,14 @@ async function saveSchedule() {
     const resp = await checkinApi.save_schedule(JSON.stringify(data))
     const d = JSON.parse(resp)
     if (d.ok) {
-      ElMessage.success('定时设置已保存')
+      ElMessage.success(t('checkin.scheduleSaved'))
       schedule.value.enabled = d.config.enabled ?? schedule.value.enabled
       refresh()
     } else {
-      ElMessage.error('保存失败: ' + (d.error || '未知错误'))
+      ElMessage.error(t('checkin.saveFailed') + (d.error || t('common.unknownError')))
     }
   } catch (e) {
-    ElMessage.error('保存失败: ' + e)
+    ElMessage.error(t('checkin.saveFailed') + e)
   }
 }
 
@@ -177,16 +180,16 @@ async function run(app) {
   const checkinApi = getCheckinApi()
   if (!checkinApi) return
   running.value = app
-  log.value = '签到中...'
+  log.value = t('checkin.checkingIn')
   try {
     const resp = await checkinApi.run_checkin(app)
     const d = JSON.parse(resp)
     const result = d[app] || resp
     log.value = result
-    ElMessage.info(result.includes('✅') ? '签到成功' : '签到完成，查看日志')
+    ElMessage.info(result.includes('✅') ? t('checkin.checkinSuccess') : t('checkin.checkinDoneViewLog'))
   } catch (e) {
-    log.value = '执行失败: ' + e
-    ElMessage.error('签到执行失败')
+    log.value = t('checkin.execFailed') + e
+    ElMessage.error(t('checkin.checkinExecFailed'))
   } finally {
     running.value = ''
     refresh()

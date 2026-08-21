@@ -1,0 +1,32 @@
+{
+  "aliases": {
+    "title": "模型别名",
+    "intro": "自定义模型别名映射，让请求更简洁。例如：设置 <code>gpt-4</code> → <code>high_quality</code>，之后请求 <code>model: \"gpt-4\"</code> 会自动路由到高质量模型组。",
+    "addAlias": "添加别名",
+    "searchPlaceholder": "搜索别名...",
+    "colAlias": "别名",
+    "colTarget": "目标模型/路由组",
+    "colDescription": "描述",
+    "colStatus": "状态",
+    "colActions": "操作",
+    "emptyText": "暂无别名配置",
+    "addFirstAlias": "添加第一个别名",
+    "editAlias": "编辑别名",
+    "aliasPlaceholder": "例如: gpt-4, claude-3, 快速模型",
+    "aliasTip": "用户请求时使用的名称",
+    "targetPlaceholder": "例如: high_quality, NVIDIA-deepseek-v3",
+    "targetTip": "可以是路由组名(如 high_quality)或具体模型名",
+    "descriptionPlaceholder": "可选描述",
+    "loadFailed": "加载别名失败",
+    "pleaseEnterAlias": "请输入别名",
+    "pleaseEnterTarget": "请输入目标模型/路由组",
+    "aliasUpdated": "别名已更新",
+    "aliasAdded": "别名已添加",
+    "deleteConfirmMsg": "确定要删除别名 \"{name}\" 吗？",
+    "deleteConfirmTitle": "删除确认",
+    "aliasDeleted": "别名已删除",
+    "deleteFailed": "删除失败",
+    "aliasEnabled": "别名已启用",
+    "aliasDisabled": "别名已禁用"
+  }
+}

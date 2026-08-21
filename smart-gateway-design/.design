@@ -1,0 +1,262 @@
+{
+  "data": [
+    {
+      "id": "page-auto-checkin",
+      "title": "自动签到",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1761245760000,
+      "canvasData": {
+        "x": 72,
+        "y": -24,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-630aecfb",
+          "measuredAt": 1787339248539
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/auto-checkin.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-dashboard",
+      "title": "仪表盘",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424000000,
+      "canvasData": {
+        "x": 672,
+        "y": -24,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-923a1e75",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/dashboard.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-providers",
+      "title": "渠道管理",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424060000,
+      "canvasData": {
+        "x": 1272,
+        "y": -24,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-a3c1cee5",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/providers.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-models",
+      "title": "模型列表",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424120000,
+      "canvasData": {
+        "x": 1872,
+        "y": -24,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-d600945c",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/models.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-api-keys",
+      "title": "API 密钥",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424180000,
+      "canvasData": {
+        "x": 2472,
+        "y": -24,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-859e3384",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/api-keys.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-billing",
+      "title": "计费中心",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424240000,
+      "canvasData": {
+        "x": 72,
+        "y": 956,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-2e883bfa",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/billing.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-routers",
+      "title": "路由组",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424300000,
+      "canvasData": {
+        "x": 672,
+        "y": 956,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-dd14f905",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/routers.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-aliases",
+      "title": "模型别名",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424360000,
+      "canvasData": {
+        "x": 1272,
+        "y": 956,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-2db26243",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/aliases.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-traces",
+      "title": "请求链路",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424420000,
+      "canvasData": {
+        "x": 1872,
+        "y": 956,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-b51177bd",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/traces.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-chats",
+      "title": "聊天记录",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424480000,
+      "canvasData": {
+        "x": 72,
+        "y": 1936,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-709fb6bd",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/chats.html",
+        "interactions": []
+      }
+    },
+    {
+      "id": "page-experience",
+      "title": "经验积累",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1787424540000,
+      "canvasData": {
+        "x": 672,
+        "y": 1936,
+        "group": 0,
+        "layoutSnapshot": {
+          "version": 1,
+          "contentHeight": 900,
+          "viewportWidth": 1440,
+          "sourceHash": "fnv1a-509ff4f9",
+          "measuredAt": 1787348041694
+        }
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/experience.html",
+        "interactions": []
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": false,
+    "deviceType": "desktop",
+    "projectName": "智能网关桌面端重设计"
+  }
+}

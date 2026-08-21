@@ -1,0 +1,30 @@
+{
+  "checkin": {
+    "autoCheckinTitle": "Auto Check-in",
+    "desktopOnlyTitle": "This page is only available inside the desktop client",
+    "desktopOnlyDesc": "Run desktop.py to open the desktop client; it shows the auto check-in status and schedule settings.",
+    "scheduledCheckin": "⏰ Scheduled Check-in",
+    "masterSwitch": "Master Switch",
+    "workbuddyTime": "WorkBuddy Time",
+    "selectCheckinTime": "Select check-in time",
+    "traeTime": "Trae Time",
+    "nextRun": "Next Run",
+    "tipDesktopAuto": "💡 Check-ins run automatically while the desktop client stays open. If you don't keep it running often, pair it with a Windows scheduled task or startup launch.",
+    "workbuddyCardTitle": "🤖 WorkBuddy Check-in",
+    "traeCardTitle": "🎯 Trae Work Check-in",
+    "signedToday": "Signed today",
+    "notSigned": "Not signed in",
+    "lastCheckin": "Last check-in",
+    "completedToday": "✅ Completed today",
+    "checkinNow": "Check in now",
+    "checkinLog": "Check-in Log",
+    "getStatusFailed": "Failed to get check-in status: ",
+    "scheduleSaved": "Schedule saved",
+    "saveFailed": "Save failed: ",
+    "checkingIn": "Checking in...",
+    "checkinSuccess": "Check-in successful",
+    "checkinDoneViewLog": "Check-in done, view the log",
+    "execFailed": "Execution failed: ",
+    "checkinExecFailed": "Check-in execution failed"
+  }
+}

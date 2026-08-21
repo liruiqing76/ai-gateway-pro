@@ -1,14 +1,14 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>模型列表</h2>
+      <h2>{{ $t('models.title') }}</h2>
       <div style="display:flex;gap:8px;align-items:center">
         <el-radio-group v-model="viewMode" size="small" @change="loadData">
-          <el-radio-button value="providers">按渠道</el-radio-button>
-          <el-radio-button value="routers">按路由组</el-radio-button>
+          <el-radio-button value="providers">{{ $t('models.byChannel') }}</el-radio-button>
+          <el-radio-button value="routers">{{ $t('models.byRouterGroup') }}</el-radio-button>
         </el-radio-group>
         <el-button @click="runSpeedTest" :loading="testing" type="primary">
-          {{ testing ? '测速中...' : '⚡ 路由组测速' }}
+          {{ testing ? $t('models.speedTesting') : $t('models.routerGroupSpeedTest') }}
         </el-button>
       </div>
     </div>
@@ -16,15 +16,15 @@
     <!-- 路由组测速结果 -->
     <div v-if="groupSpeeds && Object.keys(groupSpeeds).length > 0" class="speed-banner">
       <div class="speed-banner-title">
-        最近测速
+        {{ $t('models.recentSpeedTest') }}
         <span v-if="lastCheckTime" class="last-check-time">{{ lastCheckTime }}</span>
-        <span class="auto-refresh-hint">· 后台每2小时自动测速</span>
+        <span class="auto-refresh-hint">{{ $t('models.autoRefreshHint') }}</span>
       </div>
       <div class="speed-banner-grid">
         <div v-for="(info, name) in groupSpeeds" :key="name" class="speed-banner-item">
           <span class="name">🔀 {{ name }}</span>
           <el-tag size="small" :type="info.available ? 'success' : 'danger'">
-            {{ info.available ? '✓ 可用' : '✗ 不可用' }}
+            {{ info.available ? $t('models.available') : $t('models.unavailable') }}
           </el-tag>
           <span class="count" :class="speedColorClass(info)">
             {{ info.latency_ms ? info.latency_ms + 'ms' : '—' }}
@@ -38,7 +38,7 @@
     <template v-if="viewMode === 'providers'">
       <div v-if="loading" v-loading="loading" style="min-height:200px" />
       <div v-else-if="providers.length === 0" style="text-align:center;padding:60px;color:var(--gw-text-tertiary)">
-        暂无渠道，请先添加渠道
+        {{ $t('models.noProviders') }}
       </div>
       <div v-else class="provider-list">
         <el-card v-for="p in providers" :key="p.id" shadow="hover" class="provider-card">
@@ -47,21 +47,21 @@
               <div class="card-header-left">
                 <span class="provider-name">📡 {{ p.name }}</span>
                 <el-tag size="small" :type="p.enabled ? 'success' : 'info'" style="margin-left:8px">
-                  {{ p.enabled ? '已启用' : '已停用' }}
+                  {{ p.enabled ? $t('common.enabled') : $t('common.disabled') }}
                 </el-tag>
               </div>
               <div class="card-header-right">
-                <span class="model-count">共 {{ (p.models || []).length }} 个模型</span>
+                <span class="model-count">{{ $t('models.modelCount', { count: (p.models || []).length }) }}</span>
               </div>
             </div>
           </template>
-          <el-table :data="p.models" empty-text="无模型" stripe size="small" style="width:100%">
-            <el-table-column label="模型 ID" min-width="240">
+          <el-table :data="p.models" :empty-text="$t('models.noModels')" stripe size="small" style="width:100%">
+            <el-table-column :label="$t('models.modelId')" min-width="240">
               <template #default="{ row }">
                 <span class="model-code">{{ row }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="上下文" width="120" align="center">
+            <el-table-column :label="$t('models.context')" width="120" align="center">
               <template #default="{ row }">
                 {{ (contextLengths[row] || 32768).toLocaleString() }}
               </template>
@@ -75,7 +75,7 @@
     <template v-if="viewMode === 'routers'">
       <div v-if="loading" v-loading="loading" style="min-height:200px" />
       <div v-else-if="routerGroups.length === 0" style="text-align:center;padding:60px;color:var(--gw-text-tertiary)">
-        暂无路由组，请在路由组管理页面配置
+        {{ $t('models.noRouterGroups') }}
       </div>
       <div v-else class="router-list">
         <el-card v-for="g in routerGroups" :key="g.name" shadow="hover" class="router-card">
@@ -84,7 +84,7 @@
               <div class="card-header-left">
                 <span class="router-name">🔀 {{ g.name }}</span>
                 <el-tag size="small" :type="g.strategy === 'fastest' ? 'success' : g.strategy === 'stable' ? 'warning' : 'info'" style="margin-left:8px">
-                  {{ STRATEGY_LABELS[g.strategy] || g.strategy }}
+                  {{ $t('models.strategy.' + g.strategy) || g.strategy }}
                 </el-tag>
                 <!-- 测速结果 -->
                 <span v-if="groupSpeeds[g.name]" class="group-speed-badge">
@@ -92,7 +92,7 @@
                     ✓ {{ groupSpeeds[g.name].latency_ms }}ms
                   </el-tag>
                   <el-tag v-else size="small" type="danger">
-                    ✗ 不可用
+                    {{ $t('models.unavailable') }}
                   </el-tag>
                   <span v-if="groupSpeeds[g.name].selected_model" class="selected-model-inline">
                     → {{ groupSpeeds[g.name].selected_model }}
@@ -100,12 +100,12 @@
                 </span>
               </div>
               <div class="card-header-right">
-                <span class="model-count">共 {{ (g.models || []).length }} 个模型</span>
+                <span class="model-count">{{ $t('models.modelCount', { count: (g.models || []).length }) }}</span>
               </div>
             </div>
           </template>
-          <el-table :data="g.models" empty-text="无模型" stripe size="small" style="width:100%">
-            <el-table-column label="模型 ID" min-width="320">
+          <el-table :data="g.models" :empty-text="$t('models.noModels')" stripe size="small" style="width:100%">
+            <el-table-column :label="$t('models.modelId')" min-width="320">
               <template #default="{ row }">
                 <span class="model-code">{{ row }}</span>
               </template>
@@ -119,10 +119,11 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
-const STRATEGY_LABELS = { quality: '质量优先', fastest: '最快优先', stable: '最稳优先' }
+const { t } = useI18n()
 
 const viewMode = ref('providers')
 const loading = ref(false)
@@ -175,7 +176,7 @@ async function loadData() {
     }
     await loadSpeeds()
   } catch (e) {
-    ElMessage.error('加载失败: ' + (e.message || e))
+    ElMessage.error(t('models.loadFailed', { error: (e.message || e) }))
   } finally {
     loading.value = false
   }
@@ -219,9 +220,9 @@ async function runSpeedTest() {
     })
     groupSpeeds.value = speeds
     lastCheckTime.value = formatTime(new Date().toISOString())
-    ElMessage.success('路由组测速完成')
+    ElMessage.success(t('models.speedTestDone'))
   } catch (e) {
-    ElMessage.error('测速失败: ' + (e.response?.data?.detail || e.message))
+    ElMessage.error(t('models.speedTestFailed', { error: (e.response?.data?.detail || e.message) }))
   } finally {
     testing.value = false
   }

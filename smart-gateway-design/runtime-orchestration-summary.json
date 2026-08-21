@@ -1,0 +1,2015 @@
+{
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.08.06.19.15.08",
+    "version_source": "builtin-design-default",
+    "runtime_skill_dir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+    "recorded_at": "2026-08-22T12:00:00.000Z"
+  },
+  "project": {
+    "name": "智能网关桌面端重设计",
+    "description": "基于微信极简风格对智能网关桌面客户端自动签到页面进行视觉重设计",
+    "deviceType": "desktop",
+    "resolvedLane": "free_exploration",
+    "intentProfile": {
+      "caseFamily": "free_exploration",
+      "surface": "page",
+      "deviceType": "desktop",
+      "pageType": "task-driven",
+      "routingReason": "无现有 Design Library，无 1:1 还原目标，开放性桌面客户端 UI 重设计任务，符合 free_exploration 快速路径"
+    },
+    "selectedIntentWorkflowRead": true,
+    "contextRequirementsLoaded": [
+      {
+        "path": "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/page-rendering-quality-gate.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/design-artifact-validation.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/delivery-evidence-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "visual-experience/visual-experience-guidelines.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      }
+    ],
+    "contextReadScope": {
+      "mainAgent": {
+        "forbiddenReads": [
+          "other intent-workflows/**",
+          "Sub-Agent implementation files before dispatch"
+        ]
+      },
+      "pageSubAgent": {
+        "allowedReads": [
+          "current lane page runtime guide",
+          "current lane dispatch contract excerpt",
+          "current Page Packet",
+          "supplementaryReads[] only"
+        ],
+        "forbiddenReads": [
+          "SKILL.md full re-read",
+          "other intent-workflows/**",
+          "full runtime-orchestration-summary.json unless explicitly sliced"
+        ]
+      },
+      "readScopeLedgerWriter": "shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs"
+    },
+    "validationRunDiscipline": {
+      "maxFullValidationRuns": 2,
+      "softWarningsTriggerRepair": false,
+      "blockingRepairMode": "targeted-once",
+      "forbiddenRepairTriggers": [
+        "soft-warning-only",
+        "provenance-warning-only",
+        "style-warning-only"
+      ]
+    },
+    "lowValueCallWatchdog": {
+      "applies": true,
+      "noProgressSignals": [
+        "no_tool_call",
+        "no_artifact_diff",
+        "no_structured_decision"
+      ],
+      "noProgressNextAction": "enter_readiness_or_blocked_summary"
+    },
+    "styleContinuityAnchors": [
+      "浅灰画布 + 白色内容区表面层级",
+      "左侧边栏导航 + 选中态背景高亮",
+      "单一品牌主色（蓝）+ 语义状态色",
+      "统一 8px 圆角与极轻阴影",
+      "PingFang SC / Noto Sans SC 中文字体栈"
+    ],
+    "creativeRecipe": {
+      "businessTone": "效率工具 / 自动化网关管理，可信、安静、专业",
+      "layoutArchetype": "左侧固定边栏 + 右侧内容区（app-shell 桌面工作台）",
+      "visualSignature": "微信极简风：大量留白、克制用色、清晰层级、轻圆角、无重阴影",
+      "densityTarget": "balanced",
+      "avoidOneThing": "避免多彩标签、重阴影、圆角不统一、信息层级混乱"
+    },
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\.preflight\\preflight.html --title=\"Preflight\" --lang=zh-CN --prefix=gw --force-skeleton",
+      "brandPrefix": "gw",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "htmlClass": "present",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null
+    },
+    "sharedProjectShellContract": {
+      "applies": true,
+      "shellType": "app-shell",
+      "sidebarWidthPx": 240,
+      "sidebarHtmlReference": "pages/auto-checkin.html #sidebar-nav",
+      "headerHeightPx": 64,
+      "navItems": [
+        {
+          "key": "dashboard",
+          "label": "仪表盘",
+          "icon": "layout-dashboard"
+        },
+        {
+          "key": "providers",
+          "label": "渠道管理",
+          "icon": "layers"
+        },
+        {
+          "key": "models",
+          "label": "模型列表",
+          "icon": "brain-circuit"
+        },
+        {
+          "key": "api-keys",
+          "label": "API 密钥",
+          "icon": "key-round"
+        },
+        {
+          "key": "billing",
+          "label": "计费中心",
+          "icon": "credit-card"
+        },
+        {
+          "key": "checkin",
+          "label": "自动签到",
+          "icon": "clock"
+        },
+        {
+          "key": "routers",
+          "label": "路由组",
+          "icon": "route"
+        },
+        {
+          "key": "aliases",
+          "label": "模型别名",
+          "icon": "tag"
+        },
+        {
+          "key": "traces",
+          "label": "请求链路",
+          "icon": "activity"
+        },
+        {
+          "key": "chats",
+          "label": "聊天记录",
+          "icon": "message-square"
+        },
+        {
+          "key": "experience",
+          "label": "经验积累",
+          "icon": "book-open"
+        }
+      ],
+      "rules": [
+        "全部页面复用同一左侧边栏 DOM 结构（240px 固定宽、白底、右边框），仅选中导航项随页面切换",
+        "选中导航项使用 var(--gw-primary-50) 背景 + text-primary 前景，其余项 hover 使用 bg-muted",
+        "顶部标题栏高 64px、白底、底部边框：左侧折叠按钮与页面标题，右侧用户邮箱与退出按钮",
+        "主内容区 margin-left:240px、bg-background、内边距 p-8，内容列 max-w-5xl 居中"
+      ]
+    },
+    "defaultDeliverableVisibility": {
+      "applies": true,
+      "requiredVisibleRegions": [
+        {
+          "htmlSrc": "pages/auto-checkin.html",
+          "selector": "#sidebar-nav",
+          "label": "左侧导航边栏",
+          "source": "用户原始界面结构"
+        },
+        {
+          "htmlSrc": "pages/auto-checkin.html",
+          "selector": "#schedule-card",
+          "label": "定时签到设置卡片",
+          "source": "核心功能设置"
+        },
+        {
+          "htmlSrc": "pages/auto-checkin.html",
+          "selector": "#status-cards",
+          "label": "签到状态卡片组",
+          "source": "状态展示"
+        },
+        {
+          "htmlSrc": "pages/dashboard.html",
+          "selector": "#stat-cards",
+          "label": "仪表盘统计卡片组",
+          "source": "Dashboard.vue"
+        },
+        {
+          "htmlSrc": "pages/providers.html",
+          "selector": "#provider-table",
+          "label": "渠道列表表格",
+          "source": "Providers.vue"
+        },
+        {
+          "htmlSrc": "pages/models.html",
+          "selector": "#speed-banner",
+          "label": "路由组测速横幅",
+          "source": "Models.vue"
+        },
+        {
+          "htmlSrc": "pages/api-keys.html",
+          "selector": "#api-key-card",
+          "label": "API 密钥展示卡",
+          "source": "ApiKey.vue"
+        },
+        {
+          "htmlSrc": "pages/billing.html",
+          "selector": "#plan-cards",
+          "label": "定价计划卡片组",
+          "source": "Billing.vue"
+        },
+        {
+          "htmlSrc": "pages/routers.html",
+          "selector": "#router-table",
+          "label": "路由组列表",
+          "source": "Routers.vue"
+        },
+        {
+          "htmlSrc": "pages/aliases.html",
+          "selector": "#alias-table",
+          "label": "模型别名列表",
+          "source": "Aliases.vue"
+        },
+        {
+          "htmlSrc": "pages/traces.html",
+          "selector": "#trace-stats",
+          "label": "链路统计卡片组",
+          "source": "Traces.vue"
+        },
+        {
+          "htmlSrc": "pages/chats.html",
+          "selector": "#chat-stats",
+          "label": "聊天统计卡片组",
+          "source": "Chats.vue"
+        },
+        {
+          "htmlSrc": "pages/experience.html",
+          "selector": "#experience-stats",
+          "label": "经验统计卡片组",
+          "source": "Experience.vue"
+        }
+      ],
+      "hiddenAllowed": []
+    },
+    "dispatchPreflightManifest": [
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-auto-checkin",
+        "htmlSrc": "pages/auto-checkin.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/auto-checkin.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/auto-checkin.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-auto-checkin\" --html-src=\"pages/auto-checkin.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\auto-checkin.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\auto-checkin.html\" --title=\"自动签到\" --lang=\"zh-CN\" --prefix=\"gw\" --replace-head",
+        "headFillMode": "replace-head-after-body",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-dashboard",
+        "htmlSrc": "pages/dashboard.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/dashboard.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/dashboard.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-dashboard\" --html-src=\"pages/dashboard.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\dashboard.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\dashboard.html\" --title=\"仪表盘\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-providers",
+        "htmlSrc": "pages/providers.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/providers.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/providers.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-providers\" --html-src=\"pages/providers.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\providers.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\providers.html\" --title=\"渠道管理\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-models",
+        "htmlSrc": "pages/models.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/models.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/models.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-models\" --html-src=\"pages/models.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\models.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\models.html\" --title=\"模型列表\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-api-keys",
+        "htmlSrc": "pages/api-keys.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/api-keys.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/api-keys.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-api-keys\" --html-src=\"pages/api-keys.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\api-keys.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\api-keys.html\" --title=\"API 密钥\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-billing",
+        "htmlSrc": "pages/billing.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/billing.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/billing.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-billing\" --html-src=\"pages/billing.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\billing.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\billing.html\" --title=\"计费中心\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-routers",
+        "htmlSrc": "pages/routers.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/routers.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/routers.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-routers\" --html-src=\"pages/routers.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\routers.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\routers.html\" --title=\"路由组\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-aliases",
+        "htmlSrc": "pages/aliases.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/aliases.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/aliases.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-aliases\" --html-src=\"pages/aliases.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\aliases.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\aliases.html\" --title=\"模型别名\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-traces",
+        "htmlSrc": "pages/traces.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/traces.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/traces.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-traces\" --html-src=\"pages/traces.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\traces.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\traces.html\" --title=\"请求链路\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-chats",
+        "htmlSrc": "pages/chats.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/chats.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/chats.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-chats\" --html-src=\"pages/chats.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\chats.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\chats.html\" --title=\"聊天记录\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      },
+      {
+        "recorded_at": "2026-08-21T19:20:08.506Z",
+        "generatedBy": "build-page-dispatch-manifest.mjs",
+        "packetType": "FreePagePacket",
+        "laneContract": {
+          "resolvedLane": "free_exploration",
+          "packetType": "FreePagePacket",
+          "pageRuntimeGuide": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+          "dispatchContract": "intent-workflows/intent-page-free-exploration/dispatch-contract.md"
+        },
+        "taskLinePresent": true,
+        "outputPathPresent": true,
+        "sharedTemplate": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "nodeId": "page-experience",
+        "htmlSrc": "pages/experience.html",
+        "supplementaryReads": [],
+        "allowedWritePaths": [
+          "pages/experience.html",
+          "assets/"
+        ],
+        "forbiddenWriteRoots": [
+          "*.design",
+          "runtime-orchestration-summary.json",
+          "validation-report.json",
+          "finish-readiness-report.json",
+          "restore-contract-report.json",
+          "page-generation-summary.json"
+        ],
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": [
+            "pages/experience.html",
+            "assets/"
+          ]
+        },
+        "skillRuntime": {
+          "skillDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+          "deterministicToolDir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling",
+          "toolPaths": {
+            "applyHtmlHeadContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs",
+            "recordDispatchCompletion": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs",
+            "buildPageDispatchManifest": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\build-page-dispatch-manifest.mjs",
+            "validateDesignWorkspace": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-design-workspace.mjs",
+            "validateFinishReadiness": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs",
+            "validateRestoreContract": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-restore-contract.mjs"
+          },
+          "requiredForPageSubAgent": [
+            "applyHtmlHeadContract",
+            "recordDispatchCompletion"
+          ],
+          "pathInjection": "absolute",
+          "pathContract": "Do not use {SKILL_DIR} placeholders inside Page Sub-Agent packets; use toolPaths.* absolute paths.",
+          "commandTemplates": {
+            "recordDispatchCompletion": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\record-dispatch-completion.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --node-id=\"page-experience\" --html-src=\"pages/experience.html\" --status=completed --changed-files=<comma-separated-project-relative-files> --trace-digest=<main-agent-runtime-trace-digest> --tool-ledger-json=<tool-ledger-json-or-file>"
+          }
+        },
+        "cssFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css",
+        "htmlFilePath": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\experience.html",
+        "brandPrefix": "gw",
+        "aestheticsMode": "free-explore",
+        "toolDisciplineBlockPresent": true,
+        "fillHtmlHeadCommand": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\apply-html-head-contract.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\colors_and_type.css\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\\pages\\experience.html\" --title=\"经验积累\" --lang=\"zh-CN\" --prefix=\"gw\"",
+        "headFillMode": "skeleton-first",
+        "viewportMode": "app-shell",
+        "completionSchemaExpected": "compact",
+        "restoreFields": null,
+        "restoreContractStatus": null,
+        "restoreCompactPacket": null,
+        "deterministicCommands": null,
+        "sourceAuthorityLock": null,
+        "preDispatchFileHashes": {
+          ".design": "494d1d74811efd3d0878d06a62f6ddce27eb6582b32dfe04ac950544faf59682"
+        },
+        "contextPreflight": {
+          "workflowPath": "intent-workflows/intent-page-free-exploration/INTENT_WORKFLOW.md",
+          "requiredContextFiles": [
+            "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+            "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+            "delivery-quality/page-rendering-quality-gate.md",
+            "delivery-quality/design-artifact-validation.md",
+            "delivery-quality/delivery-evidence-contract.md",
+            "visual-experience/visual-experience-guidelines.md"
+          ],
+          "optionalContextFiles": [],
+          "passed": true
+        },
+        "pageSliceOnly": true,
+        "requiredFieldsPresent": true,
+        "missingFields": [],
+        "fillHtmlHeadCommandValid": true,
+        "mobileNavigation": {
+          "required": false,
+          "appliesToThisPage": false,
+          "canonicalHtmlIncluded": false,
+          "missingFields": []
+        },
+        "persistedToSummary": true,
+        "taskQueryAudited": false,
+        "proofSource": "summary-only",
+        "largeWorkflowFilesInTaskQuery": null
+      }
+    ],
+    "readScopeLedger": [
+      {
+        "actor": "page-sub-agent",
+        "lane": "free_exploration",
+        "path": "intent-workflows/intent-page-free-exploration/free-exploration-page-runtime.md",
+        "reason": "page runtime guide",
+        "scopeClass": "page-runtime",
+        "declaredBeforeRead": true,
+        "recordedAt": "2026-08-21T18:59:04.455Z",
+        "nodeId": "page-auto-checkin",
+        "htmlSrc": "pages/auto-checkin.html"
+      },
+      {
+        "actor": "page-sub-agent",
+        "lane": "free_exploration",
+        "path": "intent-workflows/intent-page-free-exploration/dispatch-contract.md",
+        "reason": "dispatch contract",
+        "scopeClass": "dispatch-contract",
+        "declaredBeforeRead": true,
+        "recordedAt": "2026-08-21T18:59:04.455Z",
+        "nodeId": "page-auto-checkin",
+        "htmlSrc": "pages/auto-checkin.html"
+      }
+    ],
+    "mainAgentPostDispatchMutations": [
+      {
+        "path": ".design",
+        "reason": "updated canvas registration after page generation",
+        "owner": "main-agent",
+        "recordedAt": "2026-08-21T19:06:11.018Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "path": "pages/traces.html",
+        "reason": "page html authored directly by main agent after sub-agent dispatch failures",
+        "owner": "main-agent",
+        "recordedAt": "2026-08-21T20:24:22.518Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "path": "pages/chats.html",
+        "reason": "page html authored directly by main agent after sub-agent dispatch failures",
+        "owner": "main-agent",
+        "recordedAt": "2026-08-21T20:24:22.680Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "path": "pages/experience.html",
+        "reason": "page html authored directly by main agent after sub-agent dispatch failures",
+        "owner": "main-agent",
+        "recordedAt": "2026-08-21T20:24:22.832Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "path": ".design",
+        "reason": "registered 10 new redesigned pages on canvas",
+        "owner": "main-agent",
+        "recordedAt": "2026-08-21T20:24:41.877Z",
+        "source": "record-dispatch-completion.mjs"
+      }
+    ],
+    "expectedDispatches": [
+      {
+        "nodeId": "page-dashboard",
+        "pageId": "page-dashboard",
+        "targetPageId": "page-dashboard",
+        "htmlSrc": "pages/dashboard.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/dashboard.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-dashboard-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:25:01.224Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-providers",
+        "pageId": "page-providers",
+        "targetPageId": "page-providers",
+        "htmlSrc": "pages/providers.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/providers.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-providers-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:08.444Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-models",
+        "pageId": "page-models",
+        "targetPageId": "page-models",
+        "htmlSrc": "pages/models.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/models.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-models-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:08.598Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-api-keys",
+        "pageId": "page-api-keys",
+        "targetPageId": "page-api-keys",
+        "htmlSrc": "pages/api-keys.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/api-keys.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-api-keys-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:08.747Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-billing",
+        "pageId": "page-billing",
+        "targetPageId": "page-billing",
+        "htmlSrc": "pages/billing.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/billing.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-billing-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:08.918Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-routers",
+        "pageId": "page-routers",
+        "targetPageId": "page-routers",
+        "htmlSrc": "pages/routers.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/routers.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-routers-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:09.070Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-aliases",
+        "pageId": "page-aliases",
+        "targetPageId": "page-aliases",
+        "htmlSrc": "pages/aliases.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/aliases.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-aliases-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:09.219Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-traces",
+        "pageId": "page-traces",
+        "targetPageId": "page-traces",
+        "htmlSrc": "pages/traces.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/traces.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-traces-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:22.518Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-chats",
+        "pageId": "page-chats",
+        "targetPageId": "page-chats",
+        "htmlSrc": "pages/chats.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/chats.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-chats-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:22.680Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-experience",
+        "pageId": "page-experience",
+        "targetPageId": "page-experience",
+        "htmlSrc": "pages/experience.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/experience.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e7574-page-experience-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:22.832Z",
+        "source": "record-dispatch-completion.mjs"
+      },
+      {
+        "nodeId": "page-auto-checkin",
+        "pageId": "page-auto-checkin",
+        "targetPageId": "page-auto-checkin",
+        "htmlSrc": "pages/auto-checkin.html",
+        "packetType": "FreePagePacket",
+        "status": "completed",
+        "changedFiles": [
+          "pages/auto-checkin.html"
+        ],
+        "toolCallLedger": {
+          "source": "main-agent-runtime-trace",
+          "traceDigest": "6a889e33a35e757475d78420-page-auto-checkin-main-agent-runtime-trace",
+          "todoWriteCalls": 0,
+          "previewCalls": 0,
+          "validationScriptCalls": 0,
+          "helperScriptWrites": 0
+        },
+        "recordedAt": "2026-08-21T20:24:41.877Z",
+        "source": "record-dispatch-completion.mjs"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "nodeId": "page-auto-checkin",
+      "title": "自动签到",
+      "htmlSrc": "pages/auto-checkin.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "中文表单对齐",
+        "状态标签语义一致性"
+      ],
+      "sections": [
+        "顶部标题栏与用户操作",
+        "定时签到设置卡片",
+        "签到状态卡片组",
+        "左侧导航边栏"
+      ],
+      "assets": [],
+      "domIdsRequired": [],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-dashboard",
+      "title": "仪表盘",
+      "htmlSrc": "pages/dashboard.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "数据密度与留白平衡",
+        "状态标签语义一致性"
+      ],
+      "sections": [
+        "欢迎横幅",
+        "统计卡片组（今日调用/套餐/额度重置）",
+        "最近用量表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "stat-cards"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-providers",
+      "title": "渠道管理",
+      "htmlSrc": "pages/providers.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "表格信息密度",
+        "状态标签语义一致性"
+      ],
+      "sections": [
+        "操作栏（添加渠道/模板一键添加）",
+        "渠道列表表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "provider-table"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-models",
+      "title": "模型列表",
+      "htmlSrc": "pages/models.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "分组卡片层级",
+        "测速状态色彩语义"
+      ],
+      "sections": [
+        "视图切换与测速操作栏",
+        "路由组测速横幅",
+        "按渠道分组的模型表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "speed-banner"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-api-keys",
+      "title": "API 密钥",
+      "htmlSrc": "pages/api-keys.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "代码块可读性"
+      ],
+      "sections": [
+        "API 密钥展示卡",
+        "curl 使用示例"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "api-key-card"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-billing",
+      "title": "计费中心",
+      "htmlSrc": "pages/billing.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "套餐卡片层级",
+        "当前套餐标记清晰度"
+      ],
+      "sections": [
+        "套餐状态卡（当前套餐/今日剩余额度）",
+        "定价计划卡片组",
+        "订单记录表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "plan-cards"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-routers",
+      "title": "路由组",
+      "htmlSrc": "pages/routers.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "可用性状态色彩语义",
+        "模型标签溢出"
+      ],
+      "sections": [
+        "操作栏（检测可用性/路由配置）",
+        "最近检测结果横幅",
+        "路由组列表表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "router-table"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-aliases",
+      "title": "模型别名",
+      "htmlSrc": "pages/aliases.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "说明文案排版"
+      ],
+      "sections": [
+        "功能说明文案",
+        "搜索与添加操作栏",
+        "别名映射列表表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "alias-table"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-traces",
+      "title": "请求链路",
+      "htmlSrc": "pages/traces.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "日志表格密度",
+        "延迟状态色彩语义"
+      ],
+      "sections": [
+        "统计卡片组（总请求/成功率/平均延迟/熔断命中）",
+        "筛选操作栏",
+        "链路日志表格与分页"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "trace-stats"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-chats",
+      "title": "聊天记录",
+      "htmlSrc": "pages/chats.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "摘要文本截断",
+        "日志表格密度"
+      ],
+      "sections": [
+        "统计卡片组（总对话/成功率/平均长度/累计IO）",
+        "筛选操作栏",
+        "聊天记录表格与分页"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "chat-stats"
+      ],
+      "supplementaryReads": []
+    },
+    {
+      "nodeId": "page-experience",
+      "title": "经验积累",
+      "htmlSrc": "pages/experience.html",
+      "type": "page",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "stateGroupId": null,
+      "stateRole": "base",
+      "writeMode": "SkeletonMainAtomic",
+      "qualityRisks": [
+        "app-shell 固定布局",
+        "总结区块排版",
+        "类型标签语义一致性"
+      ],
+      "sections": [
+        "统计卡片组（总数/教训/事实/近7天新增）",
+        "提炼操作栏",
+        "今日总结卡",
+        "经验库表格"
+      ],
+      "assets": [],
+      "domIdsRequired": [
+        "experience-stats"
+      ],
+      "supplementaryReads": []
+    }
+  ]
+}

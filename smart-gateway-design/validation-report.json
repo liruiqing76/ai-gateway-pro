@@ -1,0 +1,142 @@
+{
+  "success": true,
+  "outcome": "passed",
+  "repairable": true,
+  "terminalViolations": [],
+  "terminalBlockingSummary": null,
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.08.06.19.15.08",
+    "version_source": "builtin-design-default",
+    "runtime_skill_dir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+    "recorded_at": "2026-08-22T12:00:00.000Z",
+    "expected_version": "2026.08.06.19.15.08",
+    "status": "matched",
+    "read_status": "ok"
+  },
+  "operatingMode": "free-explore",
+  "renderBlockingErrorCount": 0,
+  "softWarningCount": 6,
+  "renderBlockingErrors": [],
+  "errorSignatures": [],
+  "softWarnings": [
+    "[html-head-style] models.html: found 14 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[html-head-style] routers.html: found 25 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[html-quality] models.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] models.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] routers.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] routers.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states."
+  ],
+  "repairPlanHints": [
+    {
+      "errorClass": "hardcoded-color-in-body",
+      "owner": "sub-agent",
+      "repairScope": "targeted-token-replace",
+      "strategy": "targeted_token_replace_once",
+      "affectedFiles": [
+        "models.html"
+      ],
+      "repairReportPath": null,
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 2
+    },
+    {
+      "errorClass": "hardcoded-color-in-body",
+      "owner": "sub-agent",
+      "repairScope": "targeted-token-replace",
+      "strategy": "targeted_token_replace_once",
+      "affectedFiles": [
+        "routers.html"
+      ],
+      "repairReportPath": null,
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 2
+    }
+  ],
+  "repairActionTable": [],
+  "errorCount": 0,
+  "warningCount": 6,
+  "errors": [],
+  "warnings": [
+    "[html-head-style] models.html: found 14 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[html-head-style] routers.html: found 25 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[html-quality] models.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] models.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] routers.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] routers.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states."
+  ],
+  "validationRunDisciplineStatus": {
+    "declared": true,
+    "restoreMode": false,
+    "maxFullValidationRuns": 2,
+    "validationHistoryCount": 0,
+    "repairLedgerCount": 0,
+    "softWarningsTriggerRepair": false,
+    "terminalState": null,
+    "nextAction": null,
+    "violations": [],
+    "success": true
+  },
+  "terminalState": null,
+  "nextCheck": {
+    "type": "finish-readiness",
+    "command": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --check=all",
+    "fullValidationAllowed": false,
+    "reason": "workspace validation passed; run complete finish readiness before final delivery"
+  },
+  "repairBatch": [],
+  "repairContextPacket": {
+    "schema_version": "1.0",
+    "purpose": "small-context repair packet; read this before full validation-report.json",
+    "success": true,
+    "terminalState": null,
+    "skillProvenance": {
+      "name": "solo-design",
+      "version": "2026.08.06.19.15.08",
+      "version_source": "builtin-design-default",
+      "runtime_skill_dir": "c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design",
+      "recorded_at": "2026-08-22T12:00:00.000Z",
+      "expected_version": "2026.08.06.19.15.08",
+      "status": "matched",
+      "read_status": "ok"
+    },
+    "renderBlockingErrorCount": 0,
+    "softWarningCount": 6,
+    "renderBlockingErrors": [],
+    "repairActionTable": [],
+    "nextCheck": {
+      "type": "finish-readiness",
+      "command": "node \"c:\\Users\\leslie\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs\" \"d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design\" --check=all",
+      "fullValidationAllowed": false,
+      "reason": "workspace validation passed; run complete finish readiness before final delivery"
+    },
+    "forbidden": [
+      "do not read validator source",
+      "do not rerun full validation when nextCheck.fullValidationAllowed=false",
+      "do not start preview/browser unless user explicitly asks",
+      "do not hand-edit repair ledger fields"
+    ]
+  },
+  "projectFileHashes": {
+    ".design": "d6e04d42ab7248d886f0df35fbbb20424e27346b03f247ca763873c8249530bc",
+    "colors_and_type.css": "9e81d61ac6cc2f9199f3c002e2c600056f6deb89bc95b00699974f0d46202aab",
+    "runtime-orchestration-summary.json": "1c913ad4c3c8f4aa94a277817a898a93a070351a7f1841c1d3e2c3d8b5db6d00",
+    "pages/aliases.html": "9461879d921ddf05f627b46f90c02a65c717599245fed4795626c96d92df1629",
+    "pages/api-keys.html": "b74bc528cc2bcd57e3b6eaeafe077c5784d5370552c89bdbf8c6f00d7d89b0a9",
+    "pages/auto-checkin.html": "5d22f63cb071fd5ba2d7e4a3872100907136cfb5ccd1125333b715bd92d54f62",
+    "pages/billing.html": "36432f7059957dadf1f559453392e4becdc9171d0806221b31edd0c397962c54",
+    "pages/chats.html": "36e29c31d57737b62cf7c1dfd4d9976e0bfec02931db548b2d8eda5ec747ad11",
+    "pages/dashboard.html": "6be5b18d6e878abeaa89c9980d5c6a258100291686bc375008f0ec2b23cd60c0",
+    "pages/experience.html": "d7aaa183ff82af1180841f732ccaa594007a81e3e82b54b3d2c696e7ebbbd04b",
+    "pages/models.html": "1d10895baf962c39cecd5583e49ced4f7918b57b24b129e76a28c8130048b58b",
+    "pages/providers.html": "b203d3502064509f30a3302c4440ed8d7fd8e42d8e068779cc908d598678970f",
+    "pages/routers.html": "23d64321b91a1f6173b9dc173a3b63d58cc2404f53e95abccdbccb6c58f6d4b2",
+    "pages/traces.html": "f647ccb29567e1a38443c36bfcada17f10c310d607e4fc3a17dbe5b9bb9ec2ed"
+  },
+  "designDir": "d:\\zmzc-code\\ai-gateway-pro\\smart-gateway-design",
+  "expectedPages": null,
+  "requireInteractions": null,
+  "checkedAt": "2026-08-21T22:04:23.960Z"
+}

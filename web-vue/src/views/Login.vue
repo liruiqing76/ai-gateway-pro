@@ -1,31 +1,41 @@
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h2 style="text-align:center;margin:0 0 4px;font-size:22px;font-weight:700">⚡ 智能网关</h2>
-      <p style="text-align:center;font-size:13px;color:var(--gw-text-secondary);margin-bottom:28px">
-        聚合免费额度 · 一个 API 调所有模型
-      </p>
+      <!-- 品牌区: 与侧边栏 Logo 同一语言 -->
+      <div class="brand-row">
+        <span class="brand-icon"><el-icon :size="22"><Lightning /></el-icon></span>
+        <h1 class="brand-name">{{ $t('app.title') }}</h1>
+      </div>
+      <p class="brand-subtitle">{{ $t('login.subtitle') }}</p>
 
       <el-form :model="form" label-position="top" @submit.prevent>
-        <el-form-item label="邮箱">
-          <el-input v-model="form.email" placeholder="you@example.com" />
+        <el-form-item :label="$t('login.email')">
+          <el-input v-model="form.email" :placeholder="$t('login.emailPlaceholder')" />
         </el-form-item>
-        <el-form-item label="用户名" v-if="mode === 'register'">
-          <el-input v-model="form.username" placeholder="用户名" />
+        <el-form-item :label="$t('login.username')" v-if="mode === 'register'">
+          <el-input v-model="form.username" :placeholder="$t('login.username')" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" placeholder="至少 8 位，含大小写+数字+符号" show-password />
+        <el-form-item :label="$t('login.password')">
+          <el-input v-model="form.password" type="password" :placeholder="$t('login.passwordPlaceholder')" show-password />
         </el-form-item>
-        <el-button type="primary" style="width:100%;height:40px" @click="submit" :loading="loading">
-          {{ mode === 'login' ? '登 录' : '注 册' }}
+        <el-button type="primary" class="submit-btn" @click="submit" :loading="loading">
+          {{ mode === 'login' ? $t('login.loginBtn') : $t('login.registerBtn') }}
         </el-button>
-        <div style="text-align:center;margin-top:16px;font-size:13px">
-          <span style="color:var(--gw-text-secondary)">{{ mode === 'login' ? '还没有账号?' : '已有账号?' }}</span>
+        <div class="mode-switch">
+          <span>{{ mode === 'login' ? $t('login.noAccount') : $t('login.hasAccount') }}</span>
           <el-link type="primary" style="margin-left:4px" @click="switchMode">
-            {{ mode === 'login' ? '去注册' : '去登录' }}
+            {{ mode === 'login' ? $t('login.goRegister') : $t('login.goLogin') }}
           </el-link>
         </div>
       </el-form>
+
+      <!-- 语言切换 -->
+      <div class="lang-row">
+        <el-radio-group :model-value="locale" size="small" @update:model-value="changeLocale">
+          <el-radio-button value="zh-CN">中文</el-radio-button>
+          <el-radio-button value="en-US">EN</el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
   </div>
 </template>
@@ -33,11 +43,19 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import api from '../api'
+import { setLocale } from '../i18n'
+
+const { t, locale } = useI18n()
 
 const mode = ref('login')
 const loading = ref(false)
 const form = ref({ email: '', username: '', password: '' })
+
+function changeLocale(lang) {
+  setLocale(lang)
+}
 
 function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login'
@@ -45,11 +63,11 @@ function switchMode() {
 
 async function submit() {
   if (!form.value.email || !form.value.password) {
-    ElMessage.warning('请填写邮箱和密码')
+    ElMessage.warning(t('login.missingEmailPwd'))
     return
   }
   if (mode.value === 'register' && !form.value.username) {
-    ElMessage.warning('请填写用户名')
+    ElMessage.warning(t('login.missingUsername'))
     return
   }
   loading.value = true
@@ -64,18 +82,18 @@ async function submit() {
     localStorage.setItem('gw_username', resp.data.user?.username || form.value.email)
     localStorage.setItem('gw_email', form.value.email)
     if (mode.value === 'register') {
-      ElMessage.success('注册成功，本机设备已绑定该账号')
+      ElMessage.success(t('login.registerOk'))
     } else {
-      ElMessage.success('登录成功')
+      ElMessage.success(t('login.loginOk'))
     }
     window.location.hash = '#/dashboard'
     window.location.reload()
   } catch (e) {
     const detail = e.response?.data?.detail
     if (Array.isArray(detail)) {
-      ElMessage.error(detail[0]?.msg || '校验失败')
+      ElMessage.error(detail[0]?.msg || t('login.validationFailed'))
     } else {
-      ElMessage.error(detail || '操作失败')
+      ElMessage.error(detail || t('common.operationFailed'))
     }
   } finally { loading.value = false }
 }
@@ -85,15 +103,57 @@ async function submit() {
 .login-page {
   display: flex; align-items: center; justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f5f7 0%, #e8ecf4 50%, #f0f4ff 100%);
+  background: var(--gw-background);
 }
 .login-card {
   width: 400px;
-  background: rgba(255,255,255,0.9);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 16px;
+  background: var(--gw-card);
+  border: 1px solid var(--gw-border);
+  border-radius: var(--gw-radius-lg);
   padding: 36px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.08);
+  box-shadow: var(--gw-shadow-modal);
+}
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--gw-radius-md);
+  background: var(--gw-primary-50);
+  color: var(--gw-primary);
+}
+.brand-name {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--gw-foreground);
+}
+.brand-subtitle {
+  text-align: center;
+  font-size: 13px;
+  color: var(--gw-muted-foreground);
+  margin: 8px 0 28px;
+}
+.submit-btn {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.mode-switch {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--gw-muted-foreground);
+}
+.lang-row {
+  text-align: center;
+  margin-top: 20px;
 }
 </style>

@@ -1,0 +1,27 @@
+{
+  "models": {
+    "title": "模型列表",
+    "byChannel": "按渠道",
+    "byRouterGroup": "按路由组",
+    "speedTesting": "测速中...",
+    "routerGroupSpeedTest": "⚡ 路由组测速",
+    "recentSpeedTest": "最近测速",
+    "autoRefreshHint": "· 后台每2小时自动测速",
+    "available": "✓ 可用",
+    "unavailable": "✗ 不可用",
+    "noProviders": "暂无渠道，请先添加渠道",
+    "modelCount": "共 {count} 个模型",
+    "noModels": "无模型",
+    "modelId": "模型 ID",
+    "context": "上下文",
+    "noRouterGroups": "暂无路由组，请在路由组管理页面配置",
+    "strategy": {
+      "quality": "质量优先",
+      "fastest": "最快优先",
+      "stable": "最稳优先"
+    },
+    "loadFailed": "加载失败",
+    "speedTestDone": "路由组测速完成",
+    "speedTestFailed": "测速失败"
+  }
+}

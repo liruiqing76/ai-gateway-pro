@@ -1,0 +1,27 @@
+{
+  "models": {
+    "title": "Models",
+    "byChannel": "By Channel",
+    "byRouterGroup": "By Router Group",
+    "speedTesting": "Testing...",
+    "routerGroupSpeedTest": "⚡ Router Speed Test",
+    "recentSpeedTest": "Recent Test",
+    "autoRefreshHint": "· Auto speed test every 2 hours",
+    "available": "✓ Available",
+    "unavailable": "✗ Unavailable",
+    "noProviders": "No channels yet. Please add a channel first.",
+    "modelCount": "{count} models",
+    "noModels": "No models",
+    "modelId": "Model ID",
+    "context": "Context",
+    "noRouterGroups": "No router groups yet. Configure them on the router groups page.",
+    "strategy": {
+      "quality": "Quality First",
+      "fastest": "Fastest First",
+      "stable": "Most Stable"
+    },
+    "loadFailed": "Failed to load",
+    "speedTestDone": "Router speed test complete",
+    "speedTestFailed": "Speed test failed"
+  }
+}

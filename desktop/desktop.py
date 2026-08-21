@@ -180,7 +180,11 @@ class SettingsAPI:
         return Path(folder) / name
 
     def set_auto_start(self, enabled: str) -> str:
-        """开启/关闭开机自启: {"enabled": true|false}"""
+        """开启/关闭开机自启: {"enabled": true|false}
+
+        失败时返回 {"ok": False, "error_code": ..., "error": ...},
+        前端按 error_code 本地化(error 仅作兜底展示)。
+        """
         try:
             enabled = json.loads(enabled) if isinstance(enabled, str) else enabled
             enabled = bool(enabled.get("enabled", False))
@@ -188,23 +192,33 @@ class SettingsAPI:
             enabled = bool(enabled)
 
         if not getattr(sys, "frozen", False):
-            return json.dumps({"ok": False, "error": "仅打包后的桌面应用支持开机自启"}, ensure_ascii=False)
+            return json.dumps(
+                {"ok": False, "error_code": "not_packaged",
+                 "error": "仅打包后的桌面应用支持开机自启"},
+                ensure_ascii=False,
+            )
 
-        import winshell
-        from win32com.client import Dispatch
+        try:
+            import winshell
+            from win32com.client import Dispatch
 
-        lnk = self._autostart_lnk()
-        if enabled:
-            lnk.parent.mkdir(parents=True, exist_ok=True)
-            shell = Dispatch("WScript.Shell")
-            shortcut = shell.CreateShortCut(str(lnk))
-            shortcut.Targetpath = str(self._startup_exe())
-            shortcut.WorkingDirectory = str(self._startup_dir)
-            shortcut.save()
-        else:
-            if lnk.exists():
-                lnk.unlink()
-        return json.dumps({"ok": True, "enabled": self._is_autostart()}, ensure_ascii=False)
+            lnk = self._autostart_lnk()
+            if enabled:
+                lnk.parent.mkdir(parents=True, exist_ok=True)
+                shell = Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortCut(str(lnk))
+                shortcut.Targetpath = str(self._startup_exe())
+                shortcut.WorkingDirectory = str(self._startup_dir)
+                shortcut.save()
+            else:
+                if lnk.exists():
+                    lnk.unlink()
+            return json.dumps({"ok": True, "enabled": self._is_autostart()}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps(
+                {"ok": False, "error_code": "exception", "error": str(e)},
+                ensure_ascii=False,
+            )
 
     def _is_autostart(self) -> bool:
         return self._autostart_lnk().exists()

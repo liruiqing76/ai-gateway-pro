@@ -17,6 +17,9 @@ export default defineConfig({
     }
   },
   build: {
+    // 直接输出到后端静态托管目录(web/), 与 docs/01-快速开始.md 描述一致
+    outDir: '../web',
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

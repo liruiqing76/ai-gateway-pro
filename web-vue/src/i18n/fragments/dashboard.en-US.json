@@ -1,0 +1,6 @@
+{
+  "dashboard": {
+    "quotaUsage": "Today's usage {pct}%",
+    "resetHint": "Resets daily at midnight"
+  }
+}

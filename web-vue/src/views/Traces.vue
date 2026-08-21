@@ -1,29 +1,29 @@
 <template>
   <div>
-    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">请求链路日志</h2>
+    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">{{ $t('traces.pageTitle') }}</h2>
     <p style="color:var(--gw-text-secondary);margin-bottom:20px;font-size:14px">
-      记录每次请求的完整决策链路：走了哪个模型、延迟多少、为什么选它、熔断/冷却命中情况。
+      {{ $t('traces.pageDesc') }}
     </p>
 
     <!-- 统计卡片 -->
     <div class="stats-grid" v-if="stats">
       <div class="stat-card">
         <div class="stat-value">{{ stats.total_requests }}</div>
-        <div class="stat-label">总请求 ({{ stats.period_days }}天)</div>
+        <div class="stat-label">{{ $t('traces.totalRequests', { days: stats.period_days }) }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" :class="stats.success_rate >= 95 ? 'text-green' : stats.success_rate >= 80 ? 'text-yellow' : 'text-red'">
           {{ stats.success_rate }}%
         </div>
-        <div class="stat-label">成功率</div>
+        <div class="stat-label">{{ $t('traces.successRate') }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">{{ stats.avg_latency_ms }}ms</div>
-        <div class="stat-label">平均延迟</div>
+        <div class="stat-label">{{ $t('traces.avgLatency') }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value text-orange">{{ stats.circuit_breaker_hits }}</div>
-        <div class="stat-label">熔断命中</div>
+        <div class="stat-label">{{ $t('traces.circuitBreakerHits') }}</div>
       </div>
     </div>
 
@@ -31,37 +31,37 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0">
       <div style="display:flex;gap:8px">
         <el-button @click="loadTraces" :loading="loading">
-          <el-icon><Refresh /></el-icon> 刷新
+          <el-icon><Refresh /></el-icon> {{ $t('common.refresh') }}
         </el-button>
         <el-button @click="loadStats" :loading="statsLoading">
-          <el-icon><DataAnalysis /></el-icon> 统计
+          <el-icon><DataAnalysis /></el-icon> {{ $t('traces.stats') }}
         </el-button>
         <el-button type="danger" plain @click="cleanupTraces">
-          <el-icon><Delete /></el-icon> 清理旧日志
+          <el-icon><Delete /></el-icon> {{ $t('traces.cleanupLogs') }}
         </el-button>
       </div>
       <div style="display:flex;gap:8px">
-        <el-input v-model="filterModel" placeholder="按模型筛选..." style="width:200px" clearable @clear="loadTraces" @keyup.enter="loadTraces">
+        <el-input v-model="filterModel" :placeholder="$t('traces.filterByModel')" style="width:200px" clearable @clear="loadTraces" @keyup.enter="loadTraces">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="filterSuccess" placeholder="状态" style="width:120px" clearable @change="loadTraces">
-          <el-option label="全部" :value="null" />
-          <el-option label="成功" :value="true" />
-          <el-option label="失败" :value="false" />
+        <el-select v-model="filterSuccess" :placeholder="$t('traces.status')" style="width:120px" clearable @change="loadTraces">
+          <el-option :label="$t('traces.all')" :value="null" />
+          <el-option :label="$t('common.success')" :value="true" />
+          <el-option :label="$t('common.failed')" :value="false" />
         </el-select>
-        <el-switch v-model="filterPipeline" active-text="编排" inactive-text="全部" @change="loadTraces" style="margin-left:8px" />
+        <el-switch v-model="filterPipeline" :active-text="$t('traces.orchestration')" :inactive-text="$t('traces.all')" @change="loadTraces" style="margin-left:8px" />
       </div>
     </div>
 
     <!-- 链路列表 -->
     <el-table :data="traces" style="width:100%" v-loading="loading" stripe row-key="id"
       :default-sort="{ prop: 'created_at', order: 'descending' }">
-      <el-table-column prop="created_at" label="时间" width="170" sortable>
+      <el-table-column prop="created_at" :label="$t('traces.time')" width="170" sortable>
         <template #default="{ row }">
           <span style="font-size:12px;font-family:monospace">{{ formatTime(row.created_at) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="original_model" label="请求模型" min-width="140">
+      <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="140">
         <template #default="{ row }">
           <div>
             <span style="font-weight:500">{{ row.original_model }}</span>
@@ -69,35 +69,35 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="provider_name" label="实际渠道" min-width="130">
+      <el-table-column prop="provider_name" :label="$t('traces.actualProvider')" min-width="130">
         <template #default="{ row }">
           <span v-if="row.provider_name">{{ row.provider_name }}</span>
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="model_name" label="实际模型" min-width="160">
+      <el-table-column prop="model_name" :label="$t('traces.actualModel')" min-width="160">
         <template #default="{ row }">
           <span v-if="row.model_name" style="font-family:monospace;font-size:12px">{{ row.model_name }}</span>
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="latency_ms" label="延迟" width="90" sortable>
+      <el-table-column prop="latency_ms" :label="$t('traces.latency')" width="90" sortable>
         <template #default="{ row }">
           <span :class="latencyClass(row.latency_ms)">{{ row.latency_ms }}ms</span>
         </template>
       </el-table-column>
-      <el-table-column prop="success" label="状态" width="70" align="center">
+      <el-table-column prop="success" :label="$t('traces.status')" width="70" align="center">
         <template #default="{ row }">
           <el-tag :type="row.success ? 'success' : 'danger'" size="small">
             {{ row.success ? '✓' : '✗' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="标记" width="120" align="center">
+      <el-table-column :label="$t('traces.tags')" width="120" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.circuit_breaker_hit" type="warning" size="small" style="margin:2px">熔断</el-tag>
-          <el-tag v-if="row.rate_limit_hit" type="danger" size="small" style="margin:2px">限流</el-tag>
-          <el-tag v-if="row.is_stream" type="info" size="small" style="margin:2px">流式</el-tag>
+          <el-tag v-if="row.circuit_breaker_hit" type="warning" size="small" style="margin:2px">{{ $t('traces.circuitBreaker') }}</el-tag>
+          <el-tag v-if="row.rate_limit_hit" type="danger" size="small" style="margin:2px">{{ $t('traces.rateLimit') }}</el-tag>
+          <el-tag v-if="row.is_stream" type="info" size="small" style="margin:2px">{{ $t('traces.streaming') }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="Token" width="100">
@@ -106,9 +106,9 @@
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80" align="center">
+      <el-table-column :label="$t('traces.actions')" width="80" align="center">
         <template #default="{ row }">
-          <el-button type="primary" link @click="showDetail(row)">详情</el-button>
+          <el-button type="primary" link @click="showDetail(row)">{{ $t('traces.detail') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -125,57 +125,57 @@
     </div>
 
     <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="请求链路详情" width="640px">
+    <el-dialog v-model="detailVisible" :title="$t('traces.detailTitle')" width="640px">
       <div v-if="detailRow" class="trace-detail">
         <div class="detail-section">
-          <h4>请求信息</h4>
+          <h4>{{ $t('traces.requestInfo') }}</h4>
           <div class="detail-grid">
-            <div><span class="detail-key">请求 ID:</span> <code>{{ detailRow.request_id }}</code></div>
-            <div><span class="detail-key">时间:</span> {{ formatTime(detailRow.created_at) }}</div>
-            <div><span class="detail-key">原始模型:</span> {{ detailRow.original_model }}</div>
-            <div><span class="detail-key">解析目标:</span> {{ detailRow.resolved_model || '-' }}</div>
-            <div><span class="detail-key">策略:</span> {{ detailRow.selection_strategy || '-' }}</div>
-            <div><span class="detail-key">选择原因:</span> {{ detailRow.selection_reason || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.reqId') }}:</span> <code>{{ detailRow.request_id }}</code></div>
+            <div><span class="detail-key">{{ $t('traces.time') }}:</span> {{ formatTime(detailRow.created_at) }}</div>
+            <div><span class="detail-key">{{ $t('traces.originalModel') }}:</span> {{ detailRow.original_model }}</div>
+            <div><span class="detail-key">{{ $t('traces.resolvedTarget') }}:</span> {{ detailRow.resolved_model || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.strategy') }}:</span> {{ detailRow.selection_strategy || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.selectionReason') }}:</span> {{ detailRow.selection_reason || '-' }}</div>
           </div>
         </div>
 
         <div class="detail-section">
-          <h4>执行结果</h4>
+          <h4>{{ $t('traces.executionResult') }}</h4>
           <div class="detail-grid">
-            <div><span class="detail-key">渠道:</span> {{ detailRow.provider_name || '-' }}</div>
-            <div><span class="detail-key">模型:</span> {{ detailRow.model_name || '-' }}</div>
-            <div><span class="detail-key">延迟:</span> <span :class="latencyClass(detailRow.latency_ms)">{{ detailRow.latency_ms }}ms</span></div>
-            <div><span class="detail-key">状态:</span>
-              <el-tag :type="detailRow.success ? 'success' : 'danger'" size="small">{{ detailRow.success ? '成功' : '失败' }}</el-tag>
+            <div><span class="detail-key">{{ $t('traces.provider') }}:</span> {{ detailRow.provider_name || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.model') }}:</span> {{ detailRow.model_name || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.latency') }}:</span> <span :class="latencyClass(detailRow.latency_ms)">{{ detailRow.latency_ms }}ms</span></div>
+            <div><span class="detail-key">{{ $t('traces.status') }}:</span>
+              <el-tag :type="detailRow.success ? 'success' : 'danger'" size="small">{{ detailRow.success ? $t('common.success') : $t('common.failed') }}</el-tag>
             </div>
-            <div v-if="detailRow.error_msg"><span class="detail-key">错误:</span> <span style="color:var(--gw-color-danger)">{{ detailRow.error_msg }}</span></div>
-            <div><span class="detail-key">Token:</span> {{ detailRow.prompt_tokens || 0 }} → {{ detailRow.completion_tokens || 0 }} (共 {{ detailRow.total_tokens || 0 }})</div>
+            <div v-if="detailRow.error_msg"><span class="detail-key">{{ $t('traces.error') }}:</span> <span style="color:var(--gw-color-danger)">{{ detailRow.error_msg }}</span></div>
+            <div><span class="detail-key">Token:</span> {{ detailRow.prompt_tokens || 0 }} → {{ detailRow.completion_tokens || 0 }} ({{ $t('traces.totalTokens', { total: detailRow.total_tokens || 0 }) }})</div>
           </div>
         </div>
 
         <div class="detail-section" v-if="detailRow.circuit_breaker_hit || detailRow.rate_limit_hit">
-          <h4>熔断/限流</h4>
+          <h4>{{ $t('traces.circuitLimit') }}</h4>
           <div class="detail-grid">
-            <div v-if="detailRow.circuit_breaker_hit"><el-tag type="warning" size="small">熔断命中</el-tag></div>
-            <div v-if="detailRow.rate_limit_hit"><el-tag type="danger" size="small">限流命中, 冷却 {{ detailRow.cooldown_seconds }}s</el-tag></div>
+            <div v-if="detailRow.circuit_breaker_hit"><el-tag type="warning" size="small">{{ $t('traces.circuitBreakerHit') }}</el-tag></div>
+            <div v-if="detailRow.rate_limit_hit"><el-tag type="danger" size="small">{{ $t('traces.rateLimitHitCooldown', { seconds: detailRow.cooldown_seconds }) }}</el-tag></div>
           </div>
         </div>
 
         <div class="detail-section" v-if="detailRow.stages_detail && detailRow.stages_detail.length">
-          <h4>编排阶段</h4>
+          <h4>{{ $t('traces.orchestrationStages') }}</h4>
           <el-table :data="detailRow.stages_detail" size="small" stripe>
-            <el-table-column prop="stage" label="阶段" width="70" />
-            <el-table-column prop="provider" label="渠道" width="120" />
-            <el-table-column prop="model" label="模型" min-width="150" />
-            <el-table-column prop="latency_ms" label="延迟" width="80">
+            <el-table-column prop="stage" :label="$t('traces.stage')" width="70" />
+            <el-table-column prop="provider" :label="$t('traces.provider')" width="120" />
+            <el-table-column prop="model" :label="$t('traces.model')" min-width="150" />
+            <el-table-column prop="latency_ms" :label="$t('traces.latency')" width="80">
               <template #default="{ row }">{{ row.latency_ms }}ms</template>
             </el-table-column>
-            <el-table-column prop="success" label="状态" width="70" align="center">
+            <el-table-column prop="success" :label="$t('traces.status')" width="70" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '✓' : '✗' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="error" label="错误" min-width="120">
+            <el-table-column prop="error" :label="$t('traces.error')" min-width="120">
               <template #default="{ row }">
                 <span style="color:var(--gw-text-secondary)">{{ row.error || '-' }}</span>
               </template>
@@ -189,9 +189,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, Delete, DataAnalysis } from '@element-plus/icons-vue'
 import api from '../api'
+
+const { t } = useI18n()
 
 const traces = ref([])
 const stats = ref(null)
@@ -233,7 +236,7 @@ async function loadTraces() {
     traces.value = resp.data.data || []
     totalCount.value = resp.data.total || 0
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('traces.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -245,7 +248,7 @@ async function loadStats() {
     const resp = await api.get('/api/traces/stats', { params: { days: 7 } })
     stats.value = resp.data
   } catch (e) {
-    ElMessage.error('统计加载失败')
+    ElMessage.error(t('traces.statsLoadFailed'))
   } finally {
     statsLoading.value = false
   }
@@ -258,12 +261,12 @@ function showDetail(row) {
 
 async function cleanupTraces() {
   try {
-    await ElMessageBox.confirm('将删除 30 天前的链路日志，确定？', '清理确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('traces.cleanupConfirmMsg', { days: 30 }), t('traces.cleanupConfirmTitle'), { type: 'warning' })
     const resp = await api.delete('/api/traces/cleanup', { params: { days: 30 } })
-    ElMessage.success(`已清理 ${resp.data.deleted} 条旧日志`)
+    ElMessage.success(t('traces.cleanupDone', { count: resp.data.deleted }))
     await loadTraces()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('清理失败')
+    if (e !== 'cancel') ElMessage.error(t('traces.cleanupFailed'))
   }
 }
 

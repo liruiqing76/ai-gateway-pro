@@ -1,92 +1,92 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>路由组管理</h2>
+      <h2>{{ $t('routers.title') }}</h2>
       <div style="display:flex;gap:8px">
         <el-button @click="checkAll" :loading="checking" :disabled="groups.length === 0">
-          {{ checking ? '检测中...' : '🔍 检测可用性' }}
+          {{ checking ? $t('routers.checking') : $t('routers.detectAvailability') }}
         </el-button>
-        <el-button type="primary" @click="showDialog = true">🔀 路由配置</el-button>
+        <el-button type="primary" @click="showDialog = true">{{ $t('routers.routerConfig') }}</el-button>
       </div>
     </div>
 
     <!-- 检测结果 -->
     <div v-if="checkResults.length > 0" class="check-banner">
-      <div class="check-banner-title">最近检测结果</div>
+      <div class="check-banner-title">{{ $t('routers.recentCheckResults') }}</div>
       <div class="check-group">
         <div v-for="r in checkResults" :key="r.group_name" class="check-group-item">
           <div class="name">{{ r.group_name }}</div>
           <div class="count" :style="{color: r.available === r.total ? 'var(--gw-green)' : r.available > 0 ? 'var(--gw-yellow)' : 'var(--gw-red)'}">
             {{ r.available }}/{{ r.total }}
           </div>
-          <div class="desc">{{ r.available === r.total ? '全部可用' : r.available > 0 ? '部分可用' : '全部不可用' }}</div>
+          <div class="desc">{{ r.available === r.total ? $t('routers.allAvailable') : r.available > 0 ? $t('routers.partialAvailable') : $t('routers.noneAvailable') }}</div>
         </div>
       </div>
     </div>
 
     <el-card shadow="hover">
-      <el-table :data="groups" empty-text="暂无路由组，点击上方按钮配置" v-loading="loading">
-        <el-table-column prop="name" label="组名" width="160">
+      <el-table :data="groups" :empty-text="$t('routers.emptyText')" v-loading="loading">
+        <el-table-column prop="name" :label="$t('routers.groupName')" width="160">
           <template #default="{row}"><span style="font-weight:600">🔀 {{ row.name }}</span></template>
         </el-table-column>
-        <el-table-column label="策略" width="100" align="center">
+        <el-table-column :label="$t('routers.strategy')" width="100" align="center">
           <template #default="{row}">
             <el-tag :type="row.strategy === 'fastest' ? 'success' : row.strategy === 'stable' ? 'warning' : 'info'" size="small">
               {{ STRATEGY_LABELS[row.strategy] || row.strategy }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column :label="$t('routers.status')" width="100" align="center">
           <template #default="{row}">
-            <el-tag v-if="row.available === undefined" type="info" size="small">未检测</el-tag>
+            <el-tag v-if="row.available === undefined" type="info" size="small">{{ $t('routers.notChecked') }}</el-tag>
             <el-tag v-else :type="row.available === row.total ? 'success' : row.available > 0 ? 'warning' : 'danger'" size="small">
               {{ row.available }}/{{ row.total }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="模型数" width="70" align="center">
+        <el-table-column :label="$t('routers.modelCount')" width="70" align="center">
           <template #default="{row}">{{ (row.models || []).length }}</template>
         </el-table-column>
-        <el-table-column label="模型列表" min-width="260">
+        <el-table-column :label="$t('routers.modelList')" min-width="260">
           <template #default="{row}">
             <el-tag v-for="m in (row.models || []).slice(0,6)" :key="m" size="small" style="margin:2px 4px 2px 0">{{ m }}</el-tag>
             <span v-if="(row.models || []).length > 6" style="color:var(--gw-text-tertiary);font-size:12px">+{{ (row.models || []).length - 6 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" align="center">
+        <el-table-column :label="$t('routers.actions')" width="150" align="center">
           <template #default="{row}">
-            <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" text type="danger" @click="del(row.name)">删除</el-button>
+            <el-button size="small" text type="primary" @click="openEdit(row)">{{ $t('common.edit') }}</el-button>
+            <el-button size="small" text type="danger" @click="del(row.name)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 路由配置弹窗 -->
-    <el-dialog v-model="showDialog" title="🔀 路由配置" width="720px" top="5vh" destroy-on-close @open="loadData">
+    <el-dialog v-model="showDialog" :title="$t('routers.routerConfig')" width="720px" top="5vh" destroy-on-close @open="loadData">
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <el-input v-model="newName" placeholder="路由名称 (如 大模型 / 小模型)" clearable style="flex:1;min-width:200px" />
-        <el-button @click="autoClassify" :disabled="allOptions.length === 0">📊 自动分类</el-button>
-        <el-button @click="addGroup" :disabled="!newName.trim()">+ 添加</el-button>
+        <el-input v-model="newName" :placeholder="$t('routers.routeNamePlaceholder')" clearable style="flex:1;min-width:200px" />
+        <el-button @click="autoClassify" :disabled="allOptions.length === 0">{{ $t('routers.autoClassify') }}</el-button>
+        <el-button @click="addGroup" :disabled="!newName.trim()">{{ $t('routers.addGroup') }}</el-button>
       </div>
 
       <div v-if="loadingData" v-loading="loadingData" style="min-height:200px" />
-      <div v-else-if="Object.keys(routersData).length === 0" style="text-align:center;padding:40px;color:var(--gw-text-tertiary)">暂无路由组，请在上方输入名称后点击"+ 添加"</div>
+      <div v-else-if="Object.keys(routersData).length === 0" style="text-align:center;padding:40px;color:var(--gw-text-tertiary)">{{ $t('routers.emptyAddHint') }}</div>
 
       <div v-else style="max-height:480px;overflow-y:auto">
         <div v-for="(entry, name) in routersData" :key="name" class="router-group">
           <div class="router-group-header">
             <div>
               <span class="name">🔀 {{ name }}</span>
-              <span class="hint">(客户端 model 填此名称)</span>
+              <span class="hint">{{ $t('routers.clientModelHint') }}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <el-select v-model="routerStrategies[name]" size="small" style="width:120px" @change="onStrategyChange(name)">
-                <el-option label="质量优先" value="quality" />
-                <el-option label="最快优先" value="fastest" />
-                <el-option label="最稳优先" value="stable" />
+                <el-option :label="$t('routers.strategyQuality')" value="quality" />
+                <el-option :label="$t('routers.strategyFastest')" value="fastest" />
+                <el-option :label="$t('routers.strategyStable')" value="stable" />
               </el-select>
-              <el-button size="small" text type="danger" @click="removeGroup(name)">删除</el-button>
+              <el-button size="small" text type="danger" @click="removeGroup(name)">{{ $t('common.delete') }}</el-button>
             </div>
           </div>
           <div v-for="opt in allOptions" :key="opt.key" class="model-option">
@@ -102,25 +102,25 @@
       </div>
 
       <template #footer>
-        <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveAll" :loading="saving">保存所有路由</el-button>
+        <el-button @click="showDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveAll" :loading="saving">{{ $t('routers.saveAll') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 单个路由组编辑弹窗 -->
-    <el-dialog v-model="showEdit" :title="`✏️ 编辑路由组：${editName}`" width="640px" top="8vh" destroy-on-close @open="loadEditOptions">
+    <el-dialog v-model="showEdit" :title="$t('routers.editGroupTitle', { name: editName })" width="640px" top="8vh" destroy-on-close @open="loadEditOptions">
       <div v-if="editLoading" v-loading="editLoading" style="min-height:150px" />
       <div v-else style="max-height:480px;overflow-y:auto">
         <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span style="font-weight:600">🔀 {{ editName }}</span>
           <el-select v-model="editStrategy" size="small" style="width:130px">
-            <el-option label="质量优先" value="quality" />
-            <el-option label="最快优先" value="fastest" />
-            <el-option label="最稳优先" value="stable" />
+            <el-option :label="$t('routers.strategyQuality')" value="quality" />
+            <el-option :label="$t('routers.strategyFastest')" value="fastest" />
+            <el-option :label="$t('routers.strategyStable')" value="stable" />
           </el-select>
-          <span style="font-size:12px;color:var(--gw-text-tertiary)">已选 {{ editSelected.size }} / {{ editOptions.length }}</span>
+          <span style="font-size:12px;color:var(--gw-text-tertiary)">{{ $t('routers.selectedCount', { selected: editSelected.size, total: editOptions.length }) }}</span>
         </div>
-        <div v-if="editOptions.length === 0" style="text-align:center;padding:30px;color:var(--gw-text-tertiary)">暂无可用模型，请先在渠道管理添加</div>
+        <div v-if="editOptions.length === 0" style="text-align:center;padding:30px;color:var(--gw-text-tertiary)">{{ $t('routers.noAvailableModels') }}</div>
         <div v-for="opt in editOptions" :key="opt.key" class="model-option">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
             <el-checkbox :model-value="editSelected.has(opt.key)" @change="toggleEdit(opt.key, $event)" />
@@ -130,8 +130,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="showEdit = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit" :loading="editSaving">保存</el-button>
+        <el-button @click="showEdit = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveEdit" :loading="editSaving">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -139,10 +139,13 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
-const STRATEGY_LABELS = { quality: '质量优先', fastest: '最快优先', stable: '最稳优先' }
+const { t } = useI18n()
+
+const STRATEGY_LABELS = { quality: t('routers.strategyQuality'), fastest: t('routers.strategyFastest'), stable: t('routers.strategyStable') }
 
 const groups = ref([])
 const loading = ref(false)
@@ -190,7 +193,7 @@ async function loadEditOptions() {
     editStrategy.value = entry?.strategy || editStrategy.value
     editSelected.value = new Set(models)
   } catch (e) {
-    ElMessage.error('加载失败: ' + e)
+    ElMessage.error(t('routers.loadFailed') + e)
   } finally {
     editLoading.value = false
   }
@@ -211,11 +214,11 @@ async function saveEdit() {
       models: [...editSelected.value],
       strategy: editStrategy.value,
     })
-    ElMessage.success('路由组已保存')
+    ElMessage.success(t('routers.groupSaved'))
     showEdit.value = false
     loadGroups()
   } catch (e) {
-    ElMessage.error('保存失败: ' + e)
+    ElMessage.error(t('routers.saveFailed') + e)
   } finally {
     editSaving.value = false
   }
@@ -233,7 +236,7 @@ async function loadGroups() {
       return { name, models, strategy, available: existing?.available }
     })
   } catch (e) {
-    if (e.message !== 'Unauthorized') ElMessage.error('加载路由组失败')
+    if (e.message !== 'Unauthorized') ElMessage.error(t('routers.loadGroupsFailed'))
   } finally {
     loading.value = false
   }
@@ -257,9 +260,9 @@ async function checkAll() {
       if (g) g.available = info.available
     })
     checkResults.value = results
-    ElMessage.success('检测完成')
+    ElMessage.success(t('routers.checkCompleted'))
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '检测失败')
+    ElMessage.error(e.response?.data?.detail || t('routers.checkFailed'))
   } finally {
     checking.value = false
   }
@@ -290,7 +293,7 @@ async function loadData() {
       selectedMap[name] = new Set(models)
     })
   } catch (e) {
-    ElMessage.error('加载数据失败: ' + e)
+    ElMessage.error(t('routers.loadDataFailed') + e)
   } finally {
     loadingData.value = false
   }
@@ -300,7 +303,7 @@ function addGroup() {
   const name = newName.value.trim()
   if (!name) return
   if (routersData[name]) {
-    ElMessage.warning('该路由名称已存在')
+    ElMessage.warning(t('routers.routeNameExists'))
     return
   }
   routersData[name] = []
@@ -310,7 +313,7 @@ function addGroup() {
 }
 
 function removeGroup(name) {
-  ElMessageBox.confirm(`确定删除路由组「${name}」？`, '提示', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm(t('routers.confirmDeleteGroup', { name }), t('routers.promptTitle'), { type: 'warning' }).then(() => {
     delete routersData[name]
     delete routerStrategies[name]
     delete selectedMap[name]
@@ -349,7 +352,7 @@ function autoClassify() {
     models.forEach(m => selectedMap[name].add(m))
     routersData[name] = [...selectedMap[name]]
   })
-  ElMessage.success('自动分类完成，可手动调整勾选')
+  ElMessage.success(t('routers.autoClassifyDone'))
 }
 
 async function saveAll() {
@@ -358,24 +361,24 @@ async function saveAll() {
     for (const [name, models] of Object.entries(routersData)) {
       await api.post('/api/routers', { name, models, strategy: routerStrategies[name] || 'quality' })
     }
-    ElMessage.success('路由组已保存')
+    ElMessage.success(t('routers.groupSaved'))
     showDialog.value = false
     loadGroups()
   } catch (e) {
-    ElMessage.error('保存失败: ' + e)
+    ElMessage.error(t('routers.saveFailed') + e)
   } finally {
     saving.value = false
   }
 }
 
 function del(name) {
-  ElMessageBox.confirm(`确定删除路由组「${name}」？`, '提示', { type: 'warning' }).then(async () => {
+  ElMessageBox.confirm(t('routers.confirmDeleteGroup', { name }), t('routers.promptTitle'), { type: 'warning' }).then(async () => {
     try {
       await api.delete(`/api/routers/${encodeURIComponent(name)}`)
-      ElMessage.success('已删除')
+      ElMessage.success(t('routers.deleted'))
       loadGroups()
     } catch (e) {
-      ElMessage.error('删除失败: ' + e)
+      ElMessage.error(t('routers.deleteFailed') + e)
     }
   }).catch(() => {})
 }

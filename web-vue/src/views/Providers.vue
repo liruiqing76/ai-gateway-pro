@@ -1,43 +1,43 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>渠道管理</h2>
+      <h2>{{ $t('providers.channelManagement') }}</h2>
       <div style="display:flex;gap:8px">
-        <el-button @click="openTemplateDialog">⚡ 一键添加</el-button>
-        <el-button type="primary" @click="openAdd">+ 添加渠道</el-button>
+        <el-button @click="openTemplateDialog">{{ $t('providers.quickAdd') }}</el-button>
+        <el-button type="primary" @click="openAdd">{{ $t('providers.addChannel') }}</el-button>
       </div>
     </div>
 
     <el-card shadow="hover">
-      <el-table :data="providers" empty-text="暂无渠道，点击上方按钮添加" v-loading="loading">
-        <el-table-column prop="name" label="名称" width="160">
+      <el-table :data="providers" :empty-text="$t('providers.noChannels')" v-loading="loading">
+        <el-table-column prop="name" :label="$t('providers.name')" width="160">
           <template #default="{row}"><span style="font-weight:600">{{ row.name }}</span></template>
         </el-table-column>
         <el-table-column prop="base_url" label="Base URL" min-width="260">
           <template #default="{row}"><code style="font-size:11px;color:var(--gw-accent)">{{ row.base_url }}</code></template>
         </el-table-column>
-        <el-table-column label="模型数" width="80" align="center">
+        <el-table-column :label="$t('providers.modelCount')" width="80" align="center">
           <template #default="{row}">{{ (row.models || []).length }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column :label="$t('providers.status')" width="80" align="center">
           <template #default="{row}">
-            <el-tag :type="row.enabled !== false ? 'success' : 'info'" size="small">{{ row.enabled !== false ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="row.enabled !== false ? 'success' : 'info'" size="small">{{ row.enabled !== false ? $t('common.enabled') : $t('common.disabled') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column :label="$t('providers.actions')" width="200" align="center">
           <template #default="{row}">
-            <el-button size="small" text @click="edit(row)">编辑</el-button>
-            <el-button size="small" text type="danger" @click="del(row)">删除</el-button>
+            <el-button size="small" text @click="edit(row)">{{ $t('common.edit') }}</el-button>
+            <el-button size="small" text type="danger" @click="del(row)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 手动添加/编辑渠道 -->
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑渠道' : '添加渠道'" width="520px" top="8vh" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editing ? $t('providers.editChannel') : $t('providers.addChannelTitle')" width="520px" top="8vh" destroy-on-close>
       <el-form :model="form" label-position="top">
-        <el-form-item label="名称">
-          <el-input v-model="form.name" placeholder="NVIDIA / 魔搭 / SenseNova" />
+        <el-form-item :label="$t('providers.name')">
+          <el-input v-model="form.name" :placeholder="$t('providers.namePlaceholder')" />
         </el-form-item>
         <el-form-item label="Base URL">
           <el-input v-model="form.base_url" placeholder="https://integrate.api.nvidia.com/v1" />
@@ -45,28 +45,28 @@
         <el-form-item label="API Key">
           <el-input v-model="form.api_key" type="password" placeholder="sk-..." show-password />
         </el-form-item>
-        <el-form-item label="模型列表">
+        <el-form-item :label="$t('providers.modelList')">
           <el-input v-model="form.models_str" placeholder="model-a, model-b" />
           <el-button size="small" style="margin-top:8px" @click="fetchModels" :loading="fetching">
-            {{ fetching ? '获取中...' : '🔄 获取模型列表' }}
+            {{ fetching ? $t('providers.fetchingModels') : $t('providers.fetchModelList') }}
           </el-button>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save" :loading="saving">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="save" :loading="saving">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 模板一键添加 -->
-    <el-dialog v-model="templateDialogVisible" title="⚡ 模板一键添加" width="560px" top="8vh" destroy-on-close @open="loadTemplates">
+    <el-dialog v-model="templateDialogVisible" :title="$t('providers.templateQuickAdd')" width="560px" top="8vh" destroy-on-close @open="loadTemplates">
       <div v-if="templatesLoading" v-loading="templatesLoading" style="min-height:160px" />
       <div v-else class="template-grid">
         <div v-for="tpl in templates" :key="tpl.name" class="template-card">
           <div class="template-header">
             <span class="template-name">{{ tpl.name }}</span>
             <el-tag v-if="tpl.tags" size="small" :type="tpl.tags.includes('付费') ? 'warning' : 'success'" style="margin-left:auto">
-              {{ tpl.tags.includes('付费') ? '付费' : '免费' }}
+              {{ tpl.tags.includes('付费') ? $t('providers.paid') : $t('providers.free') }}
             </el-tag>
           </div>
           <div class="template-notes">{{ tpl.notes }}</div>
@@ -74,8 +74,8 @@
             <el-tag v-for="m in (tpl.models || []).slice(0,4)" :key="m" size="small" style="margin:2px 4px 2px 0">{{ m }}</el-tag>
             <span v-if="(tpl.models || []).length > 4" style="font-size:11px;color:var(--gw-text-tertiary)">+{{ (tpl.models || []).length - 4 }}</span>
           </div>
-          <el-input v-model="tplKeys[tpl.name]" type="password" placeholder="填入该平台的 API Key" show-password size="small" style="margin:8px 0" />
-          <el-button size="small" type="primary" style="width:100%" @click="applyTemplate(tpl)" :disabled="!tplKeys[tpl.name]">添加</el-button>
+          <el-input v-model="tplKeys[tpl.name]" type="password" :placeholder="$t('providers.fillApiKeyPlaceholder')" show-password size="small" style="margin:8px 0" />
+          <el-button size="small" type="primary" style="width:100%" @click="applyTemplate(tpl)" :disabled="!tplKeys[tpl.name]">{{ $t('common.add') }}</el-button>
         </div>
       </div>
     </el-dialog>
@@ -84,8 +84,11 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -109,7 +112,7 @@ async function loadProviders() {
     const resp = await api.get('/api/providers')
     providers.value = resp.data || []
   } catch (e) {
-    if (e.message !== 'Unauthorized') ElMessage.error('加载渠道失败')
+    if (e.message !== 'Unauthorized') ElMessage.error(t('providers.loadProvidersFailed'))
   } finally {
     loading.value = false
   }
@@ -133,7 +136,7 @@ async function loadTemplates() {
     const resp = await api.get('/api/providers/templates/all')
     templates.value = resp.data || []
   } catch (e) {
-    ElMessage.error('加载模板失败: ' + e)
+    ElMessage.error(t('providers.loadTemplatesFailed') + e)
   } finally {
     templatesLoading.value = false
   }
@@ -147,12 +150,12 @@ async function applyTemplate(tpl) {
       template_name: tpl.name,
       api_key: key,
     })
-    ElMessage.success(`已添加 ${tpl.name}`)
+    ElMessage.success(t('providers.addedTemplate', { name: tpl.name }))
     delete tplKeys[tpl.name]
     await loadProviders()
     templateDialogVisible.value = false
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '添加失败')
+    ElMessage.error(e.response?.data?.detail || t('providers.addFailed'))
   }
 }
 
@@ -170,7 +173,7 @@ function edit(row) {
 
 async function fetchModels() {
   if (!form.value.base_url || !form.value.api_key) {
-    ElMessage.warning('请先填写 Base URL 和 API Key')
+    ElMessage.warning(t('providers.pleaseFillBaseUrlAndKey'))
     return
   }
   fetching.value = true
@@ -181,9 +184,9 @@ async function fetchModels() {
     })
     const models = resp.data.models || []
     form.value.models_str = models.join(', ')
-    ElMessage.success(`获取到 ${models.length} 个模型`)
+    ElMessage.success(t('providers.fetchedModels', { count: models.length }))
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '获取模型失败')
+    ElMessage.error(e.response?.data?.detail || t('providers.fetchModelsFailed'))
   } finally {
     fetching.value = false
   }
@@ -203,24 +206,24 @@ async function save() {
     } else {
       await api.post('/api/providers', body)
     }
-    ElMessage.success(editing.value ? '已更新' : '已添加')
+    ElMessage.success(editing.value ? t('providers.updated') : t('providers.added'))
     dialogVisible.value = false
     await loadProviders()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(e.response?.data?.detail || t('providers.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 
 function del(row) {
-  ElMessageBox.confirm(`确定删除渠道「${row.name}」？`, '提示', { type: 'warning' }).then(async () => {
+  ElMessageBox.confirm(t('providers.confirmDeleteChannel', { name: row.name }), t('providers.confirmTitle'), { type: 'warning' }).then(async () => {
     try {
       await api.delete(`/api/providers/${row.id}`)
-      ElMessage.success('已删除')
+      ElMessage.success(t('providers.deleted'))
       providers.value = providers.value.filter(p => p.id !== row.id)
     } catch (e) {
-      ElMessage.error('删除失败: ' + e)
+      ElMessage.error(t('providers.deleteFailed') + e)
     }
   }).catch(() => {})
 }

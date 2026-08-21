@@ -1,0 +1,6 @@
+{
+  "dashboard": {
+    "quotaUsage": "今日用量 {pct}%",
+    "resetHint": "每日零点重置"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "checkin": {
+    "autoCheckinTitle": "自动签到",
+    "desktopOnlyTitle": "此页面仅在桌面客户端内可用",
+    "desktopOnlyDesc": "请运行 desktop.py 打开桌面客户端，这里会显示自动签到状态与定时设置。",
+    "scheduledCheckin": "⏰ 定时签到",
+    "masterSwitch": "总开关",
+    "workbuddyTime": "WorkBuddy 时间",
+    "selectCheckinTime": "选择签到时间",
+    "traeTime": "Trae 时间",
+    "nextRun": "下次执行",
+    "tipDesktopAuto": "💡 桌面客户端开着就会自动签到。如果不常开客户端，可配合 Windows 计划任务或开机自启。",
+    "workbuddyCardTitle": "🤖 WorkBuddy 签到",
+    "traeCardTitle": "🎯 Trae Work 签到",
+    "signedToday": "今日已签",
+    "notSigned": "未签到",
+    "lastCheckin": "最后签到",
+    "completedToday": "✅ 今日已完成",
+    "checkinNow": "立即签到",
+    "checkinLog": "签到日志",
+    "getStatusFailed": "获取签到状态失败: ",
+    "scheduleSaved": "定时设置已保存",
+    "saveFailed": "保存失败: ",
+    "checkingIn": "签到中...",
+    "checkinSuccess": "签到成功",
+    "checkinDoneViewLog": "签到完成，查看日志",
+    "execFailed": "执行失败: ",
+    "checkinExecFailed": "签到执行失败"
+  }
+}

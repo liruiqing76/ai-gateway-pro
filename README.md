@@ -20,6 +20,9 @@
 | **请求链路日志** | 每次请求完整记录：选路原因、实际渠道/模型、延迟、熔断/限流命中、编排阶段明细 |
 | **用量统计 + 计费** | 请求数/Token 统计；free/pro/enterprise 套餐与订单管理 |
 | **自动签到** | 定时签到 WorkBuddy / Trae 领取免费额度（详见 [desktop/checkin/README_CHECKIN.md](desktop/checkin/README_CHECKIN.md)） |
+| **设置中心** | 桌面客户端内支持开机自启动一键开关（写入 Windows 启动组）、应用信息查看 |
+| **国际化** | 界面支持简体中文 / English，顶栏或登录页可切换（vue-i18n），偏好本地记忆 |
+| **界面设计** | 按 [smart-gateway-design/](smart-gateway-design/) 设计稿统一视觉：设计令牌（`colors_and_type.css`）全局注入并映射到 Element Plus 主题变量，应用壳与仪表盘等页面对齐原型 |
 | **多用户** | 每用户独立渠道/路由/别名/额度，JWT + API Key 双鉴权 |
 
 ## 🚀 快速开始
@@ -81,4 +84,4 @@ pyinstaller ai_gateway_pro.spec   # 输出 dist/智能网关.exe
 
 ---
 
-*技术栈：FastAPI · SQLAlchemy 2 · httpx · Vue 3 · Element Plus · pywebview · SQLite/MySQL*
+*技术栈：FastAPI · SQLAlchemy 2 · httpx · Vue 3 · Element Plus · vue-i18n · pywebview · SQLite/MySQL*

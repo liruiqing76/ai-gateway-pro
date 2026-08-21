@@ -1,0 +1,32 @@
+{
+  "aliases": {
+    "title": "Model Aliases",
+    "intro": "Custom alias mappings make your requests simpler. For example, set <code>gpt-4</code> → <code>high_quality</code>, then requests with <code>model: \"gpt-4\"</code> are automatically routed to the high-quality model group.",
+    "addAlias": "Add Alias",
+    "searchPlaceholder": "Search aliases...",
+    "colAlias": "Alias",
+    "colTarget": "Target Model / Route Group",
+    "colDescription": "Description",
+    "colStatus": "Status",
+    "colActions": "Actions",
+    "emptyText": "No alias configuration yet",
+    "addFirstAlias": "Add the first alias",
+    "editAlias": "Edit Alias",
+    "aliasPlaceholder": "e.g. gpt-4, claude-3, fast-model",
+    "aliasTip": "The name used when a user makes a request",
+    "targetPlaceholder": "e.g. high_quality, NVIDIA-deepseek-v3",
+    "targetTip": "Can be a route group name (e.g. high_quality) or a specific model name",
+    "descriptionPlaceholder": "Optional description",
+    "loadFailed": "Failed to load aliases",
+    "pleaseEnterAlias": "Please enter an alias",
+    "pleaseEnterTarget": "Please enter the target model / route group",
+    "aliasUpdated": "Alias updated",
+    "aliasAdded": "Alias added",
+    "deleteConfirmMsg": "Delete alias \"{name}\"?",
+    "deleteConfirmTitle": "Delete Confirmation",
+    "aliasDeleted": "Alias deleted",
+    "deleteFailed": "Failed to delete",
+    "aliasEnabled": "Alias enabled",
+    "aliasDisabled": "Alias disabled"
+  }
+}
