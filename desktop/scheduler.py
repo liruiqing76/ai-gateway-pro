@@ -11,7 +11,19 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 
 # ── 签到脚本执行常量 ──
-CHECKIN_DIR = Path(__file__).resolve().parent / "checkin"
+def _resolve_checkin_dir() -> Path:
+    """确定签到脚本目录。
+    源码模式: desktop/checkin。
+    打包后: desktop/ 没有 __init__.py, scheduler 是顶层模块, __file__ 变成
+    _MEIPASS/scheduler.py(PyInstaller 虚拟路径), 直接 parent/"checkin" 会解析到
+    _MEIPASS/checkin(空); 而 spec 用 ('desktop','desktop') 把脚本拷到了 _MEIPASS/desktop/checkin。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "desktop" / "checkin"
+    return Path(__file__).resolve().parent / "checkin"
+
+
+CHECKIN_DIR = _resolve_checkin_dir()
 SCRIPTS = {
     "workbuddy": "workbuddy_checkin.py",
     "trae": "trae_checkin.py",

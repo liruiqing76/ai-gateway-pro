@@ -47,11 +47,21 @@ except ImportError as e:
         "详细错误: " + str(e)
     )
 
-# RapidOCR（轻量级高精度 OCR，纯 onnxruntime，本地运行，不调大语言模型）
+# OCR 引擎: rapid(默认, rapidocr_onnxruntime, 纯onnxruntime轻量) / paddle(paddleocr 3.x)
+# 可通过环境变量 CHECKIN_OCR 或命令行 --engine 切换。
+OCR_ENGINE = os.environ.get("CHECKIN_OCR", "rapid").lower()
+
 RAPIDOCR_AVAILABLE = False
 try:
     from rapidocr_onnxruntime import RapidOCR
     RAPIDOCR_AVAILABLE = True
+except ImportError:
+    pass
+
+PADDLEOCR_AVAILABLE = False
+try:
+    from paddleocr import PaddleOCR
+    PADDLEOCR_AVAILABLE = True
 except ImportError:
     pass
 
@@ -170,36 +180,79 @@ def find_window(title):
         return None
 
 
-# ---------- RapidOCR ----------
+# ---------- OCR 引擎(rapid / paddle 双后端, 统一输出) ----------
 _ocr_engine = None
+_engine_name = None
+
+
+def _run_rapid(img_bgr):
+    """RapidOCR: 入参 numpy BGR, 返回 [(text, cx, cy, box)] (box 为图像像素四点)."""
+    engine = RapidOCR()
+    result, _ = engine(img_bgr)
+    out = []
+    if result:
+        for box, text, score in result:
+            xs = [p[0] for p in box]
+            ys = [p[1] for p in box]
+            cx = int(sum(xs) / 4)
+            cy = int(sum(ys) / 4)
+            out.append((text, cx, cy, box))
+    return out
+
+
+def _run_paddle(img_bgr):
+    """PaddleOCR 3.x: 入参 numpy BGR(ndarray), 返回统一 [(text, cx, cy, box)].
+    dt_polys 是相对图像 4 点坐标, rec_texts/rec_scores 按行对齐。"""
+    engine = PaddleOCR(use_textline_orientation=False, lang="ch")
+    res = engine.predict(input=img_bgr)
+    out = []
+    for r in res or []:
+        if not isinstance(r, dict):
+            continue
+        polys = r.get("dt_polys") or []
+        texts = r.get("rec_texts") or []
+        for i, txt in enumerate(texts):
+            box = polys[i] if i < len(polys) else None
+            if box is None:
+                continue
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+            cx = int(sum(xs) / len(xs))
+            cy = int(sum(ys) / len(ys))
+            out.append((txt, cx, cy, box))
+    return out
 
 
 def get_ocr_engine():
-    global _ocr_engine
-    if _ocr_engine is None and RAPIDOCR_AVAILABLE:
-        _ocr_engine = RapidOCR()
-    return _ocr_engine
+    """按 OCR_ENGINE 选择可用后端实例, 返回 (backend_callable, name)."""
+    global _ocr_engine, _engine_name
+    if _ocr_engine is not None:
+        return _ocr_engine, _engine_name
+    if OCR_ENGINE == "paddle":
+        if PADDLEOCR_AVAILABLE:
+            _ocr_engine, _engine_name = _run_paddle, "paddle"
+        else:
+            log("未安装 paddleocr, 回退到 rapid")
+    else:
+        if RAPIDOCR_AVAILABLE:
+            _ocr_engine, _engine_name = _run_rapid, "rapid"
+        else:
+            log("未安装 rapidocr, 尝试 paddle")
+    if _ocr_engine is None and PADDLEOCR_AVAILABLE:
+        _ocr_engine, _engine_name = _run_paddle, "paddle"
+    return _ocr_engine, _engine_name
 
 
 def ocr_image(img):
     """识别整张窗口截图，返回 [(text, cx, cy, box), ...]（box 为窗口内像素）。"""
-    engine = get_ocr_engine()
-    if not engine:
+    backend, name = get_ocr_engine()
+    if not backend:
         return []
     try:
         arr = np.array(img)[:, :, ::-1]  # PIL(RGB) -> numpy(BGR)
-        result, _ = engine(arr)
-        out = []
-        if result:
-            for box, text, score in result:
-                xs = [p[0] for p in box]
-                ys = [p[1] for p in box]
-                cx = int(sum(xs) / 4)
-                cy = int(sum(ys) / 4)
-                out.append((text, cx, cy, box))
-        return out
+        return backend(arr)
     except Exception as e:
-        log("OCR 异常: " + str(e))
+        log("OCR(%s) 异常: %r" % (name, e))
         return []
 
 
@@ -315,8 +368,9 @@ def run(dry=False):
     if not cfg:
         sys.exit("尚未校准。请先运行: python trae_checkin.py calibrate")
 
-    if not RAPIDOCR_AVAILABLE:
-        sys.exit("缺少 RapidOCR。请先运行: pip install rapidocr_onnxruntime")
+    backend, name = get_ocr_engine()
+    if not backend:
+        sys.exit("缺少 OCR 引擎。请先安装 rapidocr_onnxruntime(pip install rapidocr_onnxruntime) 或 paddleocr(pip install paddleocr)")
 
     if already_today():
         log("今天 (%s) 已经签到过，跳过。" % date.today())
@@ -380,11 +434,17 @@ def run(dry=False):
 
 
 def main():
+    global OCR_ENGINE
     ap = argparse.ArgumentParser(description="Trae Work 桌面端自动签到（界面点击版）")
     ap.add_argument(
         "mode", nargs="?", default="run", choices=["run", "calibrate", "status"],
         help="run=执行签到(默认), calibrate=首次坐标校准, status=仅检测不点击")
+    ap.add_argument(
+        "--engine", choices=["rapid", "paddle"], default=None,
+        help="OCR 引擎: rapid(默认, rapidocr_onnxruntime) / paddle(paddleocr)。也可用环境变量 CHECKIN_OCR")
     args = ap.parse_args()
+    if args.engine:
+        OCR_ENGINE = args.engine
     if args.mode == "calibrate":
         calibrate()
     elif args.mode == "status":

@@ -98,7 +98,9 @@ class CheckinAPI:
         return json.dumps(results)
 
     def _read_last(self, filename: str) -> str:
-        path = BASE / "checkin" / filename
+        # 标记文件(wb_last_checkin.txt/last_checkin.txt)由签到脚本写在脚本自身目录,
+        # 必须与 CHECKIN_DIR 一致; 原来读 BASE/checkin(项目根/_MEIPASS/checkin)永远找不到
+        path = CHECKIN_DIR / filename
         if path.exists():
             return path.read_text().strip()
         return ""

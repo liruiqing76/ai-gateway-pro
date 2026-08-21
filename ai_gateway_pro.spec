@@ -14,7 +14,12 @@ datas, binaries, hiddenimports = [], [], []
 for pkg in ['uvicorn', 'webview', 'apscheduler', 'fastapi', 'starlette',
             'pydantic', 'sqlalchemy', 'httpx', 'bcrypt', 'jwt', 'cryptography',
             'typing_extensions', 'pythoncom', 'pywintypes', 'win32com',
-            'webview.lib']:
+            'webview.lib',
+            # 签到脚本依赖的 OCR 运行时 + GUI 自动化(必须打进包; 脚本由 runpy
+            # 动态执行, PyInstaller 静态分析抓不到这些 import):
+            'rapidocr_onnxruntime', 'onnxruntime',
+            'pyautogui', 'pygetwindow', 'pymsgbox', 'pytweening', 'pyrect',
+            'pyperclip', 'mouseinfo', 'PIL', 'numpy']:
     try:
         d, b, h = collect_all(pkg)
         datas += d
