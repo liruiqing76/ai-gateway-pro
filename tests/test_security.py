@@ -105,7 +105,7 @@ class TestAPIKey:
         assert msg == ""
 
         # 锁定 30 分钟
-        u2 = type("U", (), {"locked_until": datetime.utcnow() + timedelta(minutes=5), "login_attempts": 3})()
+        u2 = type("U", (), {"locked_until": datetime.now() + timedelta(minutes=5), "login_attempts": 3})()
         locked, msg = check_login_lock(u2)
         assert locked is True
         assert "分钟" in msg

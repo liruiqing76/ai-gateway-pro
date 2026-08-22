@@ -30,8 +30,8 @@ def test_default_schedule():
     sched = CheckinScheduler(Path("/nonexistent/config.json"))
     cfg = sched.load_config()
     assert cfg["enabled"] is True
-    assert cfg["workbuddy_time"] == "09:00"
-    assert cfg["trae_time"] == "09:05"
+    assert cfg["workbuddy_time"] == "02:00"
+    assert cfg["trae_time"] == "02:05"
 
 
 def test_schedule_roundtrip(tmp_path):
