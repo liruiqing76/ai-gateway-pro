@@ -62,6 +62,12 @@ class QualityTracker:
         if total == 0:
             return 0.0
         raw = (q.ok - q.fail * 0.5 - q.error * 1.0) / total
+        # 延迟惩罚: 平均延迟过高(>10s)的慢渠道扣分, 避免"慢但能成功"的
+        # 上游永远排在候选最前把整个路由组拖垮(如 NVIDIA 降速期 20-200s)
+        if q.latencies:
+            avg_lat = sum(q.latencies) / len(q.latencies)
+            if avg_lat > 10000:
+                raw -= 0.3
         # 置信度: 请求越多越可信,权重向上修正
         confidence = min(total / self.window, 1.0)
         return raw * confidence
