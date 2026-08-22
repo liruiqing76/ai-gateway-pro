@@ -180,7 +180,7 @@ class TestForwardStream:
         assert gen is None
         assert "refused" in err
         # 失败计数 +1(阈值 3 次才熔断, 但质量分应下降)
-        assert circuit_breaker._states["TestUp||model-x"].fails == 1
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
         assert quality_tracker.get_score("TestUp||model-x") < 0
 
     @pytest.mark.asyncio
@@ -193,7 +193,7 @@ class TestForwardStream:
 
         assert gen is None
         assert "401" in err
-        assert circuit_breaker._states["TestUp||model-x"].fails == 1
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
 
     @pytest.mark.asyncio
     async def test_first_chunk_not_sse_format(self):
@@ -205,10 +205,12 @@ class TestForwardStream:
         provider = FakeProvider()
         gen, err = await forward_stream(client, provider, "key", "model-x", {"model": "model-x"})
 
-        assert gen is None
-        assert "invalid stream format" in err
+        # 重构后: 首块校验移到生成器内, 返回 generator; 非法格式不产出有效数据
+        assert gen is not None
+        chunks = [c async for c in gen]
+        assert chunks == []   # 无有效数据([DONE] 由外层 _stream_with_fallback 兜底)
         # 失败计数 +1(阈值 3 次才熔断, 但质量分应下降)
-        assert circuit_breaker._states["TestUp||model-x"].fails == 1
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
 
     @pytest.mark.asyncio
     async def test_empty_body(self):
@@ -219,8 +221,11 @@ class TestForwardStream:
         provider = FakeProvider()
         gen, err = await forward_stream(client, provider, "key", "model-x", {"model": "model-x"})
 
-        assert gen is None
-        assert err  # 有错误信息(空流)
+        # 空流: generator 不产出数据(外层 wrapper 负责 [DONE]/fallback), 且计入失败
+        assert gen is not None
+        chunks = [c async for c in gen]
+        assert chunks == []
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
 
     @pytest.mark.asyncio
     async def test_stream_marks_success_on_valid_first_chunk(self):

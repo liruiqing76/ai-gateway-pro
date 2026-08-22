@@ -121,11 +121,17 @@ async def check_availability(
 
                 prov = prov_map.get(prov_name)
                 if not prov:
+                    # 区分: 有渠道前缀但渠道不存在 vs 根本无渠道前缀
+                    raw_prefix = prefixed.split("-", 1)[0] if "-" in prefixed else ""
+                    if raw_prefix and "/" not in raw_prefix and prefixed.startswith(raw_prefix + "-"):
+                        error = f"渠道不存在: {raw_prefix}"
+                    else:
+                        error = "无渠道前缀, 无法测速"
                     checks.append(CheckResult(
                         model=prefixed,
                         provider=prov_name or "未知",
                         available=False,
-                        error="渠道不存在或已禁用" if prov_name else "无渠道前缀, 无法测速",
+                        error=error,
                     ))
                     continue
 

@@ -230,6 +230,7 @@ async def forward_stream(
     async def gen():
         done_sent = False
         first_line_yielded = False
+        stream_ok = False
         try:
             async for line in resp.aiter_lines():
                 if not line:
@@ -240,14 +241,18 @@ async def forward_stream(
                     first_line_yielded = True
                     if not line.startswith("data: "):
                         logger.warning("upstream stream invalid format from %s: %s", provider.name, line)
+                        circuit_breaker.record_fail(key)
+                        quality_tracker.record(key, "fail")
                         break
 
                 # yield数据
                 if not line.startswith("data: "):
+                    stream_ok = True
                     yield (line + "\n").encode()
                     continue
                 data_str = line[6:]
                 if data_str.strip() == "[DONE]":
+                    stream_ok = True
                     yield "data: [DONE]\n\n".encode()
                     done_sent = True
                     break
@@ -255,14 +260,19 @@ async def forward_stream(
                     obj = json.loads(data_str)
                     if "model" in obj and isinstance(obj.get("model"), str):
                         obj["model"] = f"{provider.name} · {model}"
+                    stream_ok = True
                     yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode()
                 except json.JSONDecodeError:
+                    stream_ok = True
                     yield (line + "\n").encode()
         except Exception as e:
             logger.warning("stream gen error from %s/%s: %s", provider.name, model, e)
         finally:
+            # 空流(上游 200 但没有任何有效行)同样视为失败, 计入熔断/质量统计
+            if not stream_ok:
+                circuit_breaker.record_fail(key)
+                quality_tracker.record(key, "fail")
             # 注意:finally 中不能 yield,否则抛 RuntimeError
-            # [DONE] 已在正常路径或 except 中发送,这里只做资源清理
             try:
                 await resp.aclose()
             except Exception:
