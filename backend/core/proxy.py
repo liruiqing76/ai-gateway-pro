@@ -348,7 +348,10 @@ def _sort_by_strategy(
     scored = []
     for p, m, k in raw:
         score = quality_tracker.get_score(k)
-        latency = quality_tracker.get_avg_latency(k) or 1e9
+        # 无该模型记录时, 用同渠道已知模型延迟估计(按模型排序, 渠道慢则其新模型自动靠后)
+        latency = (quality_tracker.get_avg_latency(k)
+                   or quality_tracker.avg_latency_for_provider(p.name)
+                   or 1e9)
         is_open = circuit_breaker.is_open(k)
         scored.append((p, m, k, score, latency, is_open))
 

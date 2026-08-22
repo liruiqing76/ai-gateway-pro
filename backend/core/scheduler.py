@@ -72,6 +72,18 @@ class QualityTracker:
         confidence = min(total / self.window, 1.0)
         return raw * confidence
 
+    def avg_latency_for_provider(self, provider_name: str) -> float | None:
+        """渠道级延迟均值: 无该模型记录时用同渠道已知模型延迟估计, 让慢渠道的
+        新模型/无记录模型也能正确排后(按模型排序, 而不是按配置档位排序)。"""
+        lats = []
+        prefix = f"{provider_name}||"
+        for k, q in self._data.items():
+            if k.startswith(prefix) and q.latencies:
+                lats.extend(q.latencies)
+        if not lats:
+            return None
+        return sum(lats) / len(lats)
+
     def get_avg_latency(self, key: str) -> float | None:
         q = self._get(key)
         if not q.latencies:
