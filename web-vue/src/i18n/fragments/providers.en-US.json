@@ -31,6 +31,7 @@
     "confirmDeleteChannel": "Delete channel '{name}'?",
     "confirmTitle": "Notice",
     "deleted": "Deleted",
-    "deleteFailed": "Failed to delete: "
+    "deleteFailed": "Failed to delete: ",
+    "footerSummary": "{count} channels · {models} models · Use the buttons above to add"
   }
 }

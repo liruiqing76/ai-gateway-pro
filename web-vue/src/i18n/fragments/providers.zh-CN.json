@@ -31,6 +31,7 @@
     "confirmDeleteChannel": "确定删除渠道「{name}」？",
     "confirmTitle": "提示",
     "deleted": "已删除",
-    "deleteFailed": "删除失败: "
+    "deleteFailed": "删除失败: ",
+    "footerSummary": "共 {count} 个渠道 · {models} 个模型 · 点击右上角添加新渠道"
   }
 }

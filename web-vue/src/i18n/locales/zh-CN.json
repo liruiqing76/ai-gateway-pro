@@ -44,7 +44,7 @@
   "login": {
     "subtitle": "聚合免费额度 · 一个 API 调所有模型",
     "email": "邮箱",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "username": "用户名",
     "password": "密码",
     "passwordPlaceholder": "至少 8 位，含大小写+数字+符号",
@@ -131,7 +131,9 @@
     "time": "时间",
     "noOrders": "暂无订单",
     "upgradeConfirm": "确认升级到 {plan}？",
-    "orderCreated": "订单已创建: {orderNo}"
+    "orderCreated": "订单已创建: {orderNo}",
+    "permanent": "永久有效",
+    "quotaHint": "每日 1000 次, 凌晨重置"
   },
   "aliases": {
     "title": "模型别名",
@@ -333,7 +335,8 @@
     "confirmDeleteChannel": "确定删除渠道「{name}」？",
     "confirmTitle": "提示",
     "deleted": "已删除",
-    "deleteFailed": "删除失败: "
+    "deleteFailed": "删除失败: ",
+    "footerSummary": "共 {count} 个渠道 · {models} 个模型 · 点击右上角添加新渠道"
   },
   "routers": {
     "title": "路由组管理",

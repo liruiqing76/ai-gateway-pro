@@ -44,7 +44,7 @@
   "login": {
     "subtitle": "聚合免费额度 · 一个 API 调所有模型",
     "email": "邮箱",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "username": "用户名",
     "password": "密码",
     "passwordPlaceholder": "至少 8 位，含大小写+数字+符号",

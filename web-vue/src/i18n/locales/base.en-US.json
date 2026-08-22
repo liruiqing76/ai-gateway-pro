@@ -44,7 +44,7 @@
   "login": {
     "subtitle": "Aggregate free quotas · One API for all models",
     "email": "Email",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "username": "Username",
     "password": "Password",
     "passwordPlaceholder": "At least 8 chars with upper/lowercase, digits and symbols",

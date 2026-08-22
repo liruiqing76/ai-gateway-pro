@@ -3,12 +3,16 @@
     <div class="page-header">
       <h2>{{ $t('providers.channelManagement') }}</h2>
       <div style="display:flex;gap:8px">
-        <el-button @click="openTemplateDialog">{{ $t('providers.quickAdd') }}</el-button>
-        <el-button type="primary" @click="openAdd">{{ $t('providers.addChannel') }}</el-button>
+        <el-button @click="openTemplateDialog">
+          <el-icon style="margin-right:4px"><Zap /></el-icon>{{ $t('providers.quickAdd') }}
+        </el-button>
+        <el-button type="primary" @click="openAdd">
+          <el-icon style="margin-right:4px"><Plus /></el-icon>{{ $t('providers.addChannel') }}
+        </el-button>
       </div>
     </div>
 
-    <el-card shadow="hover">
+    <el-card shadow="hover" style="margin-bottom:12px">
       <el-table :data="providers" :empty-text="$t('providers.noChannels')" v-loading="loading">
         <el-table-column prop="name" :label="$t('providers.name')" width="160">
           <template #default="{row}"><span style="font-weight:600">{{ row.name }}</span></template>
@@ -31,6 +35,9 @@
           </template>
         </el-table-column>
       </el-table>
+      <div style="padding:14px 6px 2px;font-size:12px;color:var(--gw-text-secondary)">
+        {{ $t('providers.footerSummary', { count: providers.length, models: totalModels }) }}
+      </div>
     </el-card>
 
     <!-- 手动添加/编辑渠道 -->
@@ -83,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
@@ -94,6 +101,7 @@ const loading = ref(false)
 const saving = ref(false)
 const fetching = ref(false)
 const providers = ref([])
+const totalModels = computed(() => providers.value.reduce((n, p) => n + ((p.models || []).length), 0))
 const dialogVisible = ref(false)
 const editing = ref(false)
 const editId = ref(null)

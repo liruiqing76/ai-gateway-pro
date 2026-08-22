@@ -44,7 +44,7 @@
   "login": {
     "subtitle": "Aggregate free quotas · One API for all models",
     "email": "Email",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "you{'@'}example.com",
     "username": "Username",
     "password": "Password",
     "passwordPlaceholder": "At least 8 chars with upper/lowercase, digits and symbols",
@@ -131,7 +131,9 @@
     "time": "Time",
     "noOrders": "No orders yet",
     "upgradeConfirm": "Upgrade to {plan}?",
-    "orderCreated": "Order created: {orderNo}"
+    "orderCreated": "Order created: {orderNo}",
+    "permanent": "Never expires",
+    "quotaHint": "1000 calls/day, resets at midnight"
   },
   "aliases": {
     "title": "Model Aliases",
@@ -333,7 +335,8 @@
     "confirmDeleteChannel": "Delete channel '{name}'?",
     "confirmTitle": "Notice",
     "deleted": "Deleted",
-    "deleteFailed": "Failed to delete: "
+    "deleteFailed": "Failed to delete: ",
+    "footerSummary": "{count} channels · {models} models · Use the buttons above to add"
   },
   "routers": {
     "title": "Router Group Management",
