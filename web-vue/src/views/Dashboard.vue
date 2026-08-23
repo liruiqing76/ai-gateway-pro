@@ -7,7 +7,7 @@
 
     <!-- 统计卡片组: 图标行 + 大数值 + 进度条/说明 -->
     <el-row :gutter="24" style="margin-bottom:24px">
-      <el-col :span="8">
+      <el-col :span="6">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><DataLine /></el-icon>
@@ -20,7 +20,17 @@
           <div class="stat-caption">{{ $t('dashboard.quotaUsage', { pct: stats.pct }) }}</div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
+        <div class="stat-card-v2">
+          <div class="stat-head">
+            <el-icon class="stat-head-icon" :size="18"><Coin /></el-icon>
+            {{ $t('dashboard.todayTokens') }}
+          </div>
+          <div class="stat-value">{{ (usageSummary.today_tokens || 0).toLocaleString() }}</div>
+          <div class="stat-caption">{{ $t('dashboard.totalTokensCaption', { total: totalTokens.toLocaleString(), calls: usageSummary.total.toLocaleString() }) }}</div>
+        </div>
+      </el-col>
+      <el-col :span="6">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><Box /></el-icon>
@@ -30,17 +40,36 @@
           <div class="stat-caption">{{ stats.tierExpires }}</div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><Timer /></el-icon>
             {{ $t('dashboard.quotaReset') }}
           </div>
-          <div class="stat-value">{{ stats.resetTime }}</div>
+          <div class="stat-value">00:00</div>
           <div class="stat-caption">{{ $t('dashboard.resetHint') }}</div>
         </div>
       </el-col>
     </el-row>
+
+    <!-- 按日 Token 趋势(近 30 天) -->
+    <section class="usage-card" style="margin-bottom:24px">
+      <div class="usage-head">
+        <h3>{{ $t('dashboard.tokenTrend') }}</h3>
+        <span v-if="dailyList.length" class="usage-meta">{{ $t('dashboard.tokenTrendMeta', { days: dailyList.length }) }}</span>
+      </div>
+      <div v-if="dailyMax > 0" class="trend-chart">
+        <div v-for="d in dailyList" :key="d.date" class="trend-col"
+             :title="`${d.date} · ${$t('dashboard.trendCalls', { n: d.calls })} · ${d.tokens.toLocaleString()} token`">
+          <div class="trend-bar-wrap">
+            <div class="trend-bar" :style="{ height: Math.max(d.tokens / dailyMax * 100, d.tokens > 0 ? 4 : 1.5) + '%' }"
+                 :class="{ 'trend-bar-empty': d.tokens === 0 }"></div>
+          </div>
+          <div class="trend-date">{{ d.date.slice(8) }}</div>
+        </div>
+      </div>
+      <div v-else class="trend-empty">{{ $t('dashboard.noTokenData') }}</div>
+    </section>
 
     <!-- 最近用量 -->
     <section class="usage-card">
@@ -68,9 +97,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DataLine, Box, Timer } from '@element-plus/icons-vue'
+import { DataLine, Box, Timer, Coin } from '@element-plus/icons-vue'
 import api from '../api'
 
 const { t } = useI18n()
@@ -79,6 +108,12 @@ const loading = ref(false)
 const stats = ref({ used: 0, daily: 100, pct: 0, tierLabel: '', tierExpires: '', resetTime: '00:00' })
 const usageList = ref([])
 const usageSummary = ref({ total: 0, today: 0, today_tokens: 0, failed: 0 })
+const dailyList = ref([])   // 近 N 天 [{date, calls, tokens}]
+
+const totalTokens = computed(() =>
+  dailyList.value.reduce((s, d) => s + (d.tokens || 0), 0))
+const dailyMax = computed(() =>
+  Math.max(...dailyList.value.map(d => d.tokens || 0), 0))
 
 function tierLabel(tier) {
   if (tier === 'pro') return t('dashboard.tierPro')
@@ -104,12 +139,14 @@ onMounted(async () => {
   } catch (e) { /* login first */ }
 
   try {
-    const [listResp, sumResp] = await Promise.all([
+    const [listResp, sumResp, dailyResp] = await Promise.all([
       api.get('/api/usage?limit=50'),
       api.get('/api/usage/summary'),
+      api.get('/api/usage/daily?days=30'),
     ])
     usageList.value = listResp.data.data || []
     usageSummary.value = sumResp.data || usageSummary.value
+    dailyList.value = dailyResp.data.data || []
   } catch (e) { /* usage 读取失败不阻塞主面板 */ }
 })
 </script>
@@ -184,5 +221,48 @@ onMounted(async () => {
 }
 .usage-card :deep(.el-table) {
   margin-top: 16px;
+}
+
+/* 按日 Token 趋势图 */
+.trend-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 20px 24px 16px;
+}
+.trend-col {
+  flex: 1;
+  min-width: 0;
+  cursor: default;
+}
+.trend-bar-wrap {
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+}
+.trend-bar {
+  width: 100%;
+  background: var(--gw-primary);
+  border-radius: 4px 4px 0 0;
+  opacity: .85;
+  transition: opacity .15s, height .3s ease;
+}
+.trend-col:hover .trend-bar {
+  opacity: 1;
+}
+.trend-bar-empty {
+  background: var(--gw-border);
+}
+.trend-date {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--gw-muted-foreground);
+  text-align: center;
+  font-family: monospace;
+}
+.trend-empty {
+  padding: 28px 24px 32px;
+  font-size: 13px;
+  color: var(--gw-muted-foreground);
 }
 </style>

@@ -58,7 +58,13 @@
     "missingUsername": "Please enter a username",
     "registerOk": "Registered. This device is now bound to the account",
     "loginOk": "Signed in",
-    "validationFailed": "Validation failed"
+    "validationFailed": "Validation failed",
+    "tagline": "One key, every major model",
+    "feature1": "Aggregate free quotas with smart routing",
+    "feature2": "Speed-tested router groups with failover",
+    "feature3": "Full request traces, every call accountable",
+    "welcomeBack": "Welcome back",
+    "createAccount": "Create account"
   },
   "settings": {
     "title": "Settings",
@@ -101,7 +107,13 @@
     "model": "Model",
     "status": "Status",
     "quotaUsage": "Today's usage {pct}%",
-    "resetHint": "Resets daily at midnight"
+    "resetHint": "Resets daily at midnight",
+    "todayTokens": "Tokens Today",
+    "totalTokensCaption": "{total} tokens total · {calls} calls",
+    "tokenTrend": "Token Usage Trend",
+    "tokenTrendMeta": "Last {days} days",
+    "trendCalls": "{n} calls",
+    "noTokenData": "No token usage recorded yet"
   },
   "apiKey": {
     "title": "API Keys",

@@ -1,6 +1,12 @@
 {
   "dashboard": {
     "quotaUsage": "Today's usage {pct}%",
-    "resetHint": "Resets daily at midnight"
+    "resetHint": "Resets daily at midnight",
+    "todayTokens": "Tokens Today",
+    "totalTokensCaption": "{total} tokens total · {calls} calls",
+    "tokenTrend": "Token Usage Trend",
+    "tokenTrendMeta": "Last {days} days",
+    "trendCalls": "{n} calls",
+    "noTokenData": "No token usage recorded yet"
   }
 }

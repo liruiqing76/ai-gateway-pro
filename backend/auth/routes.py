@@ -89,7 +89,8 @@ async def register(data: RegisterIn):
             invited_by=None,
             quota_daily=1000,
             quota_used_today=0,
-            quota_reset_at=datetime.now() + timedelta(days=1),
+            # 首次重置点 = 明天零点(自然日), 而不是注册时刻+24h
+            quota_reset_at=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1),
             machine_code=machine_code or None,  # 绑定额定机器码
         )
 

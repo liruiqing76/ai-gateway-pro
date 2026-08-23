@@ -1,0 +1,10 @@
+{
+  "login": {
+    "tagline": "One key, every major model",
+    "feature1": "Aggregate free quotas with smart routing",
+    "feature2": "Speed-tested router groups with failover",
+    "feature3": "Full request traces, every call accountable",
+    "welcomeBack": "Welcome back",
+    "createAccount": "Create account"
+  }
+}

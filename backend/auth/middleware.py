@@ -103,13 +103,21 @@ def require_admin(user: User = Depends(get_current_user_from_jwt)) -> User:
 
 
 async def check_quota(user: User = Depends(get_current_user_from_api_key)) -> User:
-    """检查用户额度"""
+    """检查用户额度。每日额度按自然日计: 每天零点(本地时间)重置"""
     from datetime import datetime, timedelta
     now = datetime.now()
-    # 如果 quota_reset_at 已过,重置
-    if user.quota_reset_at and user.quota_reset_at < now:
+    tomorrow_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    changed = False
+    if not user.quota_reset_at:
+        # 老数据缺锚点: 只补对齐到明天零点, 不清零已用次数(避免给超额用户变相续命)
+        user.quota_reset_at = tomorrow_midnight
+        changed = True
+    elif user.quota_reset_at < now:
+        # 自然日已过: 零点清零, 下次重置=明天零点
         user.quota_used_today = 0
-        user.quota_reset_at = now + timedelta(days=1)
+        user.quota_reset_at = tomorrow_midnight
+        changed = True
+    if changed:
         session = get_session()
         try:
             session.merge(user)

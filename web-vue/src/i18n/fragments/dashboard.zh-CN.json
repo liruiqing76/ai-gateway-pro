@@ -1,6 +1,12 @@
 {
   "dashboard": {
     "quotaUsage": "今日用量 {pct}%",
-    "resetHint": "每日零点重置"
+    "resetHint": "每日零点重置",
+    "todayTokens": "今日 Token",
+    "totalTokensCaption": "累计 {total} token · {calls} 次调用",
+    "tokenTrend": "Token 用量趋势",
+    "tokenTrendMeta": "近 {days} 天",
+    "trendCalls": "{n} 次调用",
+    "noTokenData": "暂无 Token 消耗记录"
   }
 }

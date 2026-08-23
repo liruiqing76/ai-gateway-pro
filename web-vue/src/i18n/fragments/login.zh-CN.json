@@ -1,0 +1,10 @@
+{
+  "login": {
+    "tagline": "一个密钥，调用所有大模型",
+    "feature1": "聚合各家免费额度，自动优选",
+    "feature2": "路由组测速，故障自动切换",
+    "feature3": "链路可观测，每一次调用有迹可循",
+    "welcomeBack": "欢迎回来",
+    "createAccount": "创建账号"
+  }
+}

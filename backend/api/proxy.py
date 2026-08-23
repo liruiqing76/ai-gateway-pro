@@ -29,7 +29,7 @@ from backend.core.orchestrate import (
 from backend.core.trace import TraceContext, save_trace
 from backend.core.chat_log import (
     extract_prompt_text, extract_completion_text, save_chat_log, StreamRecorder,
-    set_probe_mode,
+    set_probe_mode, is_probe_mode,
 )
 from backend.core.router_group import classify_model
 from backend.core import vision
@@ -156,33 +156,44 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
             trace.mark_selected("auto-vision", requested_model, "auto-vision non-stream ok")
             trace.finish()
             save_trace(trace)
-            try:
-                session = get_session()
-                try:
-                    pt = int(usage.get("prompt_tokens", 0) or 0)
-                    ct = int(usage.get("completion_tokens", 0) or 0)
-                    log = UsageLog(
-                        user_id=user.id,
-                        provider_name="auto-vision",
-                        model_name=requested_model,
-                        prompt_tokens=pt,
-                        completion_tokens=ct,
-                        total_tokens=pt + ct,
-                        success=True,
-                    )
-                    session.add(log)
-                    user.quota_used_today = (user.quota_used_today or 0) + 1
-                    session.merge(user)
-                    session.commit()
-                finally:
-                    session.close()
-            except Exception:
-                logger.exception("auto-vision usage log failed")
+            pt = int(usage.get("prompt_tokens", 0) or 0)
+            ct = int(usage.get("completion_tokens", 0) or 0)
+            _log_usage_and_quota(user=user, provider_name="auto-vision",
+                                 model_name=requested_model, pt=pt, ct=ct,
+                                 tag="auto-vision")
             return resp, False, None
     trace.mark_error("文本模型调用失败")
     trace.finish()
     save_trace(trace)
     return None, False, "text_failed"
+
+
+# ── 用量明细与额度累计 ──
+def _log_usage_and_quota(*, user, provider_name, model_name, pt, ct, tag="usage"):
+    """成功调用后写 UsageLog 并累计当日额度。
+    速度探测请求跳过: 不污染调用量/token 统计, 也不占用每日配额
+    (后台每 2h 自动测速若计入会白白消耗用户额度)。"""
+    if is_probe_mode():
+        return
+    try:
+        session = get_session()
+        try:
+            session.add(UsageLog(
+                user_id=user.id,
+                provider_name=provider_name,
+                model_name=model_name,
+                prompt_tokens=pt,
+                completion_tokens=ct,
+                total_tokens=pt + ct,
+                success=True,
+            ))
+            user.quota_used_today = (user.quota_used_today or 0) + 1
+            session.merge(user)
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        logger.exception(f"{tag} usage log failed")
 
 
 # 全局 httpx 客户端(复用连接池)
@@ -421,27 +432,9 @@ async def proxy_chat(
                 latency_ms=trace.latency_ms,
             )
 
-            try:
-                session = get_session()
-                try:
-                    log = UsageLog(
-                        user_id=user.id,
-                        provider_name="orchestrate",
-                        model_name=requested_model,
-                        prompt_tokens=pt,
-                        completion_tokens=ct,
-                        total_tokens=pt + ct,
-                        success=True,
-                    )
-                    session.add(log)
-                    user.quota_used_today = (user.quota_used_today or 0) + 1
-                    session.merge(user)
-                    session.commit()
-                finally:
-                    session.close()
-            except Exception:
-                logger.exception("orchestrate usage log failed")
-
+            _log_usage_and_quota(user=user, provider_name="orchestrate",
+                                 model_name=requested_model, pt=pt, ct=ct,
+                                 tag="orchestrate")
             return JSONResponse(content=orch_result)
 
     # ---- 自动图片识别路由: 文本模型请求带图片 → 先视觉识别再调文本模型 ----
@@ -648,27 +641,8 @@ async def proxy_chat(
                 is_stream=False, latency_ms=trace.latency_ms,
             )
 
-            try:
-                session = get_session()
-                try:
-                    log = UsageLog(
-                        user_id=user.id,
-                        provider_name=provider.name,
-                        model_name=model,
-                        prompt_tokens=pt,
-                        completion_tokens=ct,
-                        total_tokens=pt + ct,
-                        success=True,
-                    )
-                    session.add(log)
-                    user.quota_used_today = (user.quota_used_today or 0) + 1
-                    session.merge(user)
-                    session.commit()
-                finally:
-                    session.close()
-            except Exception:
-                logger.exception("usage log failed")
-
+            _log_usage_and_quota(user=user, provider_name=provider.name,
+                                 model_name=model, pt=pt, ct=ct)
             return JSONResponse(content=resp)
 
         last_err = err
