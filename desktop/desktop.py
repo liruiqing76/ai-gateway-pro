@@ -299,16 +299,32 @@ def _load_tray_image():
 
 def _apply_native_window_icon(window):
     """源码模式下给 WinForms 窗体设置原生图标(标题栏/任务栏/Alt+Tab)。
-    打包模式下 exe 已内嵌图标, 此函数同样无害。"""
+    打包模式下 exe 已内嵌图标, 此函数同样无害。
+
+    注意: 本函数由 shown 事件派生到后台线程执行。绝不能从后台线程直接改
+    WinForms 属性 —— 会与 UI 线程的 WebView2 初始化竞态死锁(表现为红屏+无响应)。
+    必须用 BeginInvoke 把实际赋值排队回 UI 线程, 调用本身立即返回。
+    """
     ico_path = ASSETS_DIR / "app.ico"
     if not ico_path.exists():
         return
     try:
+        form = getattr(window, "native", None)
+        if form is None:
+            return
         import clr
         clr.AddReference("System.Drawing")
+        from System import Action
         from System.Drawing import Icon
-        window.native.Icon = Icon(str(ico_path))
-        print("[desktop] 已设置原生窗口图标(app.ico)")
+
+        def _set_icon():
+            try:
+                form.Icon = Icon(str(ico_path))
+                print("[desktop] 已设置原生窗口图标(app.ico)")
+            except Exception as e:
+                print(f"[desktop] 原生窗口图标设置失败(不影响使用): {e}")
+
+        form.BeginInvoke(Action(_set_icon))
     except Exception as e:
         print(f"[desktop] 原生窗口图标设置失败(不影响使用): {e}")
 
