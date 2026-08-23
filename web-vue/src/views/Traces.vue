@@ -25,6 +25,10 @@
         <div class="stat-value text-orange">{{ stats.circuit_breaker_hits }}</div>
         <div class="stat-label">{{ $t('traces.circuitBreakerHits') }}</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--gw-muted-foreground)">{{ stats.probe_count ?? 0 }}</div>
+        <div class="stat-label">{{ $t('traces.probeRequests', { days: stats.period_days }) }}</div>
+      </div>
     </div>
 
     <!-- 操作栏 -->
@@ -40,11 +44,19 @@
           <el-icon><Delete /></el-icon> {{ $t('traces.cleanupLogs') }}
         </el-button>
       </div>
-      <div style="display:flex;gap:8px">
-        <el-input v-model="filterModel" :placeholder="$t('traces.filterByModel')" style="width:200px" clearable @clear="loadTraces" @keyup.enter="loadTraces">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <el-select v-model="filterRequestType" style="width:130px" @change="onFilterChange">
+          <el-option :label="$t('traces.typeAll')" value="" />
+          <el-option :label="$t('traces.typeReal')" value="real" />
+          <el-option :label="$t('traces.typeProbe')" value="speed_test" />
+        </el-select>
+        <el-select v-model="filterGroup" :placeholder="$t('traces.groupLabel')" style="width:150px" clearable @change="onFilterChange">
+          <el-option v-for="g in groupOptions" :key="g" :label="g" :value="g" />
+        </el-select>
+        <el-input v-model="filterModel" :placeholder="$t('traces.filterByModel')" style="width:200px" clearable @clear="onFilterChange" @keyup.enter="onFilterChange">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="filterSuccess" :placeholder="$t('traces.status')" style="width:120px" clearable @change="loadTraces">
+        <el-select v-model="filterSuccess" :placeholder="$t('traces.status')" style="width:120px" clearable @change="onFilterChange">
           <el-option :label="$t('traces.all')" :value="null" />
           <el-option :label="$t('common.success')" :value="true" />
           <el-option :label="$t('common.failed')" :value="false" />
@@ -61,10 +73,11 @@
           <span style="font-size:12px;font-family:monospace">{{ formatTime(row.created_at) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="140">
+      <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="150">
         <template #default="{ row }">
           <div>
             <span style="font-weight:500">{{ row.original_model }}</span>
+            <el-tag v-if="row.request_type === 'speed_test'" type="info" size="small" style="margin-left:4px">{{ $t('traces.probeTag') }}</el-tag>
             <el-tag v-if="row.is_pipeline" size="small" type="info" style="margin-left:4px">{{ row.pipeline_mode }}</el-tag>
           </div>
         </template>
@@ -205,6 +218,9 @@ const currentPage = ref(1)
 const filterModel = ref('')
 const filterSuccess = ref(null)
 const filterPipeline = ref(false)
+const filterRequestType = ref('')   // '' 全部 / real 真实 / speed_test 速度探测
+const filterGroup = ref('')         // 路由组名, '' = 全部
+const groupOptions = ref([])
 const detailVisible = ref(false)
 const detailRow = ref(null)
 
@@ -221,6 +237,19 @@ function latencyClass(ms) {
   return 'text-red'
 }
 
+/** 筛选条件变化: 回到第一页再查询 */
+function onFilterChange() {
+  currentPage.value = 1
+  loadTraces()
+}
+
+async function loadGroups() {
+  try {
+    const resp = await api.get('/api/routers')
+    groupOptions.value = Object.keys(resp.data?.data || {}).sort()
+  } catch (e) { /* 分组下拉失败不阻塞列表 */ }
+}
+
 async function loadTraces() {
   loading.value = true
   try {
@@ -231,6 +260,8 @@ async function loadTraces() {
     if (filterModel.value) params.model = filterModel.value
     if (filterSuccess.value !== null) params.success = filterSuccess.value
     if (filterPipeline.value) params.pipeline_only = true
+    if (filterRequestType.value) params.request_type = filterRequestType.value
+    if (filterGroup.value) params.group = filterGroup.value
 
     const resp = await api.get('/api/traces', { params })
     traces.value = resp.data.data || []
@@ -273,13 +304,14 @@ async function cleanupTraces() {
 onMounted(() => {
   loadTraces()
   loadStats()
+  loadGroups()
 })
 </script>
 
 <style scoped>
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 16px;
 }

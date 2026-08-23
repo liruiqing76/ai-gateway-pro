@@ -1,0 +1,6 @@
+{
+  "billing": {
+    "permanent": "永久有效",
+    "quotaHint": "每日零点重置"
+  }
+}

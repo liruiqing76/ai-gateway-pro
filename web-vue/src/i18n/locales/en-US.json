@@ -133,7 +133,7 @@
     "upgradeConfirm": "Upgrade to {plan}?",
     "orderCreated": "Order created: {orderNo}",
     "permanent": "Never expires",
-    "quotaHint": "1000 calls/day, resets at midnight"
+    "quotaHint": "Resets daily at midnight"
   },
   "aliases": {
     "title": "Model Aliases",
@@ -385,6 +385,12 @@
     "pageTitle": "Request Trace Logs",
     "pageDesc": "Records the complete decision chain of every request: which model was used, the latency, why it was selected, and circuit-breaker or cooldown hits.",
     "totalRequests": "Total Requests ({days}d)",
+    "probeRequests": "Speed Tests ({days}d)",
+    "typeAll": "All requests",
+    "typeReal": "Real requests",
+    "typeProbe": "Speed tests",
+    "groupLabel": "Group",
+    "probeTag": "Probe",
     "successRate": "Success Rate",
     "avgLatency": "Avg Latency",
     "circuitBreakerHits": "Circuit Breaker Hits",

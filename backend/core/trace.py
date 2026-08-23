@@ -24,6 +24,7 @@ class TraceContext:
     is_stream: bool = False
     is_pipeline: bool = False
     pipeline_mode: str = ""
+    request_type: str = "real"  # real 真实请求 / speed_test 速度探测
 
     # 实际选择
     provider_name: str = ""
@@ -99,6 +100,7 @@ class TraceContext:
             "is_stream": self.is_stream,
             "is_pipeline": self.is_pipeline,
             "pipeline_mode": self.pipeline_mode,
+            "request_type": self.request_type,
             "provider_name": self.provider_name,
             "model_name": self.model_name,
             "selection_strategy": self.selection_strategy,
@@ -130,6 +132,7 @@ def save_trace(trace: TraceContext):
                 is_stream=trace.is_stream,
                 is_pipeline=trace.is_pipeline,
                 pipeline_mode=trace.pipeline_mode or None,
+                request_type=trace.request_type or "real",
                 provider_name=trace.provider_name or None,
                 model_name=trace.model_name or None,
                 selection_strategy=trace.selection_strategy or None,

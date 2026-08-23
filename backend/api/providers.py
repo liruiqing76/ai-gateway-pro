@@ -540,6 +540,8 @@ async def check_all_models(
                 headers = {
                     "Authorization": f"Bearer {gateway_api_key}",
                     "Content-Type": "application/json",
+                    # 标记为速度探测: 链路日志归类 request_type=speed_test, 不写聊天记录
+                    "X-GW-Source": "speed-test",
                 }
                 payload = {
                     "model": group_name,
@@ -654,6 +656,8 @@ async def _do_speed_check(user_id: int):
                 headers = {
                     "Authorization": f"Bearer {gateway_api_key}",
                     "Content-Type": "application/json",
+                    # 标记为速度探测: 链路日志归类 request_type=speed_test, 不写聊天记录
+                    "X-GW-Source": "speed-test",
                 }
                 payload = {
                     "model": group_name,

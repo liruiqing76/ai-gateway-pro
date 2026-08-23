@@ -133,7 +133,7 @@
     "upgradeConfirm": "确认升级到 {plan}？",
     "orderCreated": "订单已创建: {orderNo}",
     "permanent": "永久有效",
-    "quotaHint": "每日 1000 次, 凌晨重置"
+    "quotaHint": "每日零点重置"
   },
   "aliases": {
     "title": "模型别名",
@@ -385,6 +385,12 @@
     "pageTitle": "请求链路日志",
     "pageDesc": "记录每次请求的完整决策链路：走了哪个模型、延迟多少、为什么选它、熔断/冷却命中情况。",
     "totalRequests": "总请求 ({days}天)",
+    "probeRequests": "速度探测 ({days}天)",
+    "typeAll": "全部请求",
+    "typeReal": "真实请求",
+    "typeProbe": "速度探测",
+    "groupLabel": "分组",
+    "probeTag": "探测",
     "successRate": "成功率",
     "avgLatency": "平均延迟",
     "circuitBreakerHits": "熔断命中",

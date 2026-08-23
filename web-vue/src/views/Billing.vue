@@ -9,7 +9,7 @@
             <el-icon :size="18" style="color:var(--gw-primary)"><Box /></el-icon>
             <span style="font-size:13px;color:var(--gw-text-secondary)">{{ $t('billing.currentPlan') }}</span>
           </div>
-          <div style="font-size:24px;font-weight:600;margin-top:8px;color:#1d1d1f">{{ tierLabel }}</div>
+          <div style="font-size:24px;font-weight:600;margin-top:8px;color:var(--gw-foreground)">{{ tierLabel }}</div>
           <div style="font-size:12px;color:var(--gw-text-secondary);margin-top:4px">{{ $t('billing.permanent') }}</div>
         </el-card>
       </el-col>
@@ -19,7 +19,7 @@
             <el-icon :size="18" style="color:var(--gw-primary)"><Coin /></el-icon>
             <span style="font-size:13px;color:var(--gw-text-secondary)">{{ $t('billing.dailyRemaining') }}</span>
           </div>
-          <div style="font-size:24px;font-weight:600;margin-top:8px;color:#1d1d1f">{{ remaining }}</div>
+          <div style="font-size:24px;font-weight:600;margin-top:8px;color:var(--gw-foreground)">{{ remaining }}</div>
           <div style="font-size:12px;color:var(--gw-text-secondary);margin-top:4px">{{ $t('billing.quotaHint') }}</div>
         </el-card>
       </el-col>

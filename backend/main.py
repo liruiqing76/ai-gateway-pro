@@ -33,10 +33,18 @@ from backend.api.license import router as license_router
 from backend.api.experience import router as experience_router
 from backend.api.free_sources import router as free_sources_router
 
-# 日志
+# 日志: 控制台 + 文件(exe 打包后 windowed 无 stderr, 500 堆栈只能靠文件日志排查)
+_LOG_ROOT = (Path(os.environ.get("GW_DB_PATH", "")).resolve().parent.parent
+             if os.environ.get("GW_DB_PATH") else Path(__file__).resolve().parent.parent)
+_LOG_DIR = _LOG_ROOT / "logs"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(str(_LOG_DIR / "gateway.log"), encoding="utf-8"),
+    ],
 )
 logger = logging.getLogger("gateway")
 

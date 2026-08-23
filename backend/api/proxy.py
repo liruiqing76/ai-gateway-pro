@@ -29,6 +29,7 @@ from backend.core.orchestrate import (
 from backend.core.trace import TraceContext, save_trace
 from backend.core.chat_log import (
     extract_prompt_text, extract_completion_text, save_chat_log, StreamRecorder,
+    set_probe_mode,
 )
 from backend.core.router_group import classify_model
 from backend.core import vision
@@ -227,6 +228,11 @@ async def proxy_chat(
 
     # 初始化链路追踪
     trace = TraceContext(user_id=user.id, original_model=requested_model or "", is_stream=stream)
+
+    # ── 系统内部探测标记(路由组测速等): 链路里单独归类, 不写聊天记录 ──
+    if (request.headers.get("x-gw-source") or "").lower() == "speed-test":
+        trace.request_type = "speed_test"
+        set_probe_mode(True)
 
     # 获取用户的渠道和路由
     session = get_session()

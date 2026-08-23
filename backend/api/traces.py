@@ -22,8 +22,10 @@ async def list_traces(
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
     offset: int = Query(0, ge=0, description="偏移量"),
     model: Optional[str] = Query(None, description="按模型名筛选"),
+    group: Optional[str] = Query(None, description="按路由组/请求的 model 字段筛选"),
     success: Optional[bool] = Query(None, description="按成功/失败筛选"),
     pipeline_only: bool = Query(False, description="只看编排请求"),
+    request_type: Optional[str] = Query(None, description="请求类型: real 真实 / speed_test 探测, 不传=全部"),
 ):
     """查询请求链路日志"""
     session = get_session()
@@ -35,10 +37,24 @@ async def list_traces(
                 RequestTrace.model_name.ilike(f"%{model}%") |
                 RequestTrace.original_model.ilike(f"%{model}%")
             )
+        if group:
+            # 组名可能出现在原始 model(组名直调)或解析目标里
+            query = query.filter(
+                (RequestTrace.original_model == group) |
+                (RequestTrace.resolved_model == group)
+            )
         if success is not None:
             query = query.filter_by(success=success)
         if pipeline_only:
             query = query.filter_by(is_pipeline=True)
+        if request_type == "real":
+            # 兼容历史数据: 旧记录无该列值(NULL), 视为真实请求
+            query = query.filter(
+                (RequestTrace.request_type == "real") |
+                (RequestTrace.request_type.is_(None))
+            )
+        elif request_type == "speed_test":
+            query = query.filter(RequestTrace.request_type == "speed_test")
 
         total = query.count()
         records = query.order_by(RequestTrace.created_at.desc()).offset(offset).limit(limit).all()
@@ -71,6 +87,7 @@ async def trace_stats(
         success_count = base.filter_by(success=True).count()
         fail_count = total - success_count
         pipeline_count = base.filter_by(is_pipeline=True).count()
+        probe_count = base.filter_by(request_type="speed_test").count()
         cb_hit = base.filter_by(circuit_breaker_hit=True).count()
         rl_hit = base.filter_by(rate_limit_hit=True).count()
 
@@ -101,6 +118,7 @@ async def trace_stats(
             "fail_count": fail_count,
             "success_rate": round(success_count / total * 100, 1) if total > 0 else 0,
             "pipeline_count": pipeline_count,
+            "probe_count": probe_count,
             "circuit_breaker_hits": cb_hit,
             "rate_limit_hits": rl_hit,
             "avg_latency_ms": round(avg_latency),
@@ -148,6 +166,7 @@ def _record_to_dict(r: RequestTrace) -> dict:
         "is_stream": r.is_stream,
         "is_pipeline": r.is_pipeline,
         "pipeline_mode": r.pipeline_mode,
+        "request_type": r.request_type or "real",
         "provider_name": r.provider_name,
         "model_name": r.model_name,
         "selection_strategy": r.selection_strategy,

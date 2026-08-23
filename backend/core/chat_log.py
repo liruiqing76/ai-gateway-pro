@@ -7,9 +7,23 @@
 import json
 import logging
 import time
+from contextvars import ContextVar
 from typing import Optional
 
 logger = logging.getLogger("gateway.chat_log")
+
+# 速度探测等系统内部请求标记: 置位后 save_chat_log 直接跳过,
+# 避免测速的 "hi" 探测污染聊天记录(链路 trace 里仍会以 request_type=speed_test 记录)
+_probe_mode: ContextVar = ContextVar("gw_probe_mode", default=False)
+
+
+def set_probe_mode(enabled: bool) -> None:
+    """标记当前请求上下文为系统探测(不写聊天记录)"""
+    _probe_mode.set(enabled)
+
+
+def is_probe_mode() -> bool:
+    return _probe_mode.get()
 
 
 # ─────────────────────────────────────────────
@@ -114,7 +128,9 @@ def save_chat_log(
     success: bool = True,
     error_msg: Optional[str] = None,
 ):
-    """保存聊天记录(非阻塞, 失败仅记日志)"""
+    """保存聊天记录(非阻塞, 失败仅记日志; 速度探测请求自动跳过)"""
+    if is_probe_mode():
+        return None
     try:
         from backend.models import get_session, ChatLog
         pc = len(prompt_text or "")

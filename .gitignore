@@ -44,3 +44,6 @@ desktop/checkin/*_config.json
 desktop/checkin/shots/
 desktop/checkin/*last_checkin.txt
 backend/data/*.bak*
+
+# i18n/链路验证脚本的临时数据
+.tmp-verify/

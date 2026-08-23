@@ -1,0 +1,6 @@
+{
+  "billing": {
+    "permanent": "Never expires",
+    "quotaHint": "Resets daily at midnight"
+  }
+}

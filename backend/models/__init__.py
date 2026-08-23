@@ -225,6 +225,7 @@ class RequestTrace(Base):
     is_stream = Column(Boolean, default=False)
     is_pipeline = Column(Boolean, default=False)          # 是否编排请求
     pipeline_mode = Column(String(16), nullable=True)     # relay / review
+    request_type = Column(String(16), default="real")     # real 真实请求 / speed_test 速度探测
 
     # 实际选择
     provider_name = Column(String(64), nullable=True)
@@ -397,6 +398,9 @@ def _migrate_columns(engine):
         "users": {
             "machine_code": "VARCHAR(128)",
             "license_locked": "BOOLEAN",
+        },
+        "request_traces": {
+            "request_type": "VARCHAR(16)",
         },
     }
     try:
