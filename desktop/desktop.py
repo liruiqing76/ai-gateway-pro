@@ -408,7 +408,7 @@ def main():
     checkin_api = CheckinAPI(_scheduler)
     settings_api = SettingsAPI()
     window = webview.create_window(
-        "⚡ 智能网关 v0.1.0",   # 加版本号, 便于在任务栏/Alt+Tab 识别
+        "智能网关 v0.1.0",   # 加版本号便于任务栏/Alt+Tab 识别; 不带emoji(标题栏左侧已是法斗图标)
         url,
         width=1200,
         height=800,
