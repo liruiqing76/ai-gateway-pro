@@ -15,6 +15,8 @@ for pkg in ['uvicorn', 'webview', 'apscheduler', 'fastapi', 'starlette',
             'pydantic', 'sqlalchemy', 'httpx', 'bcrypt', 'jwt', 'cryptography',
             'typing_extensions', 'pythoncom', 'pywintypes', 'win32com',
             'webview.lib',
+            # 托盘图标(关闭最小化到托盘)
+            'pystray', 'PIL._tkinter_finder',
             # 签到脚本依赖的 OCR 运行时 + GUI 自动化(必须打进包; 脚本由 runpy
             # 动态执行, PyInstaller 静态分析抓不到这些 import):
             'rapidocr_onnxruntime', 'onnxruntime',
@@ -54,6 +56,10 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# 应用图标: 用户可随时覆盖 desktop/assets/app.ico 换图, 重新打包即生效;
+# 文件不存在时不设置(PyInstaller 会报错), 托盘/窗口走运行时占位逻辑
+_APP_ICON = BASE / 'desktop' / 'assets' / 'app.ico'
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -66,7 +72,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon=None,
+    icon=str(_APP_ICON) if _APP_ICON.exists() else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

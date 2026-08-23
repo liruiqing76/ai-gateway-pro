@@ -267,7 +267,103 @@ class DesktopBridge:
         self.settings = settings
 
 
-# ── 主入口 ──
+# ── 系统托盘(右下角) ──
+# 行为: 点窗口 X / 任务栏关闭 → 隐藏到托盘(不退出); 托盘左键单击或菜单"打开"恢复;
+#       菜单"退出"才真正结束进程。
+# 图标: 优先使用用户自备的 desktop/assets/app.ico(或 app.png), 没有则运行时画一个
+#       品牌蓝圆角+闪电占位图。想换图标直接覆盖 app.ico 即可, 无需改代码。
+ASSETS_DIR = BASE / "desktop" / "assets"
+APP_TITLE = "智能网关 v0.1.0"
+_tray_icon = None          # pystray.Icon 单例
+_really_exit = False       # 托盘"退出"置位后, closing 事件放行真正关闭
+
+
+def _load_tray_image():
+    """托盘图标: 依次尝试 desktop/assets/app.ico、app.png; 都没有则画占位图"""
+    from PIL import Image, ImageDraw
+    for name in ("app.ico", "app.png"):
+        p = ASSETS_DIR / name
+        if p.exists():
+            try:
+                return Image.open(p)
+            except Exception:
+                pass
+    # 占位: 品牌蓝圆角方块 + 白色闪电
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([2, 2, 61, 61], radius=14, fill=(23, 119, 255, 255))
+    d.polygon([(36, 8), (20, 34), (30, 34), (26, 56), (44, 28), (33, 28)],
+              fill=(255, 255, 255, 255))
+    return img
+
+
+def _apply_native_window_icon(window):
+    """源码模式下给 WinForms 窗体设置原生图标(标题栏/任务栏/Alt+Tab)。
+    打包模式下 exe 已内嵌图标, 此函数同样无害。"""
+    ico_path = ASSETS_DIR / "app.ico"
+    if not ico_path.exists():
+        return
+    try:
+        import clr
+        clr.AddReference("System.Drawing")
+        from System.Drawing import Icon
+        window.native.Icon = Icon(str(ico_path))
+        print("[desktop] 已设置原生窗口图标(app.ico)")
+    except Exception as e:
+        print(f"[desktop] 原生窗口图标设置失败(不影响使用): {e}")
+
+
+def _setup_tray(window):
+    """窗口显示后启动托盘图标(独立线程 + 自带消息循环, 不依赖 UI 线程)"""
+    global _tray_icon
+    try:
+        import pystray
+    except Exception as e:
+        print(f"[tray] pystray 不可用, 跳过托盘功能: {e}")
+        return
+
+    def on_open(icon, item=None):
+        try:
+            window.show()
+        except Exception:
+            pass
+
+    def on_quit(icon, item=None):
+        global _really_exit
+        _really_exit = True
+        try:
+            icon.stop()
+        except Exception:
+            pass
+        try:
+            window.destroy()
+        except Exception:
+            os._exit(0)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("打开 智能网关", on_open, default=True),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出", on_quit),
+    )
+    icon = pystray.Icon("ai-gateway-pro", _load_tray_image(), APP_TITLE, menu)
+    threading.Thread(target=icon.run, daemon=True, name="gw-tray").start()
+    _tray_icon = icon
+    print("[tray] 托盘已启动")
+
+
+def _make_closing_handler(window):
+    """点关闭 → 隐藏到托盘并取消真实关闭; 仅托盘菜单'退出'时放行"""
+    def on_closing():
+        if _really_exit:
+            return None  # 允许关闭
+        try:
+            window.hide()
+        except Exception:
+            pass
+        return False     # 取消本次 close
+    return on_closing
+
+
 def main():
     # 启动后端
     t = threading.Thread(target=start_backend, daemon=True)
@@ -308,6 +404,9 @@ def main():
         confirm_close=False,
         js_api=DesktopBridge(checkin_api, settings_api),
     )
+    # 托盘 + 关闭最小化到托盘; shown 事件触发一次, 在窗口就绪后再装图标/托盘
+    window.events.shown += lambda: (_apply_native_window_icon(window), _setup_tray(window))
+    window.events.closing += _make_closing_handler(window)
     # 显式使用 Edge WebView2 引擎(已确认运行时已安装, GUIType 值为 'edgechromium')。
     # 不显式指定时 pywebview 在某些环境会自动选成 mshtml(IE)导致 JS 失效/窗口空白。
     webview.start(gui='edgechromium', debug=False)
