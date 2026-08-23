@@ -414,8 +414,8 @@ def main():
         height=800,
         min_size=(900, 600),
         x=100, y=80,  # 显式位置, 避开屏幕左上角(0,0), 避免被 WorkBuddy 窗口遮盖
-        # 显眼红色背景, 即便内容没渲染, 也能立刻分辨"这是我们的窗口 vs WorkBuddy IDE 界面"
-        background_color="#FF3B3B",
+        # 启动兜底底色与应用页面背景一致(--gw-background), 避免内容渲染前闪红
+        background_color="#F5F5F7",
         text_select=True,
         confirm_close=False,
         js_api=DesktopBridge(checkin_api, settings_api),
