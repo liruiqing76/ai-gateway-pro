@@ -45,6 +45,7 @@ a = Analysis(
         'win32timezone',
         'win32com',
         'win32com.client',
+        'win32com.shell',
     ],
     hookspath=[],
     hooksconfig={},

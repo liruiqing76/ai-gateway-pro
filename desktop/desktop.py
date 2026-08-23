@@ -173,9 +173,10 @@ class SettingsAPI:
         return json.dumps(info, ensure_ascii=False)
 
     def _autostart_lnk(self) -> Path:
-        """Windows 开机自启快捷方式路径"""
-        import winshell
-        folder = winshell.startup()
+        """Windows 开机自启快捷方式路径。
+        Startup 文件夹用 Shell COM(SHGetFolderPath)获取, 不依赖 winshell。"""
+        from win32com.shell import shell, shellcon
+        folder = shell.SHGetFolderPath(0, shellcon.CSIDL_STARTUP, None, 0)
         name = "智能网关" + (".lnk" if getattr(sys, "frozen", False) else "")
         return Path(folder) / name
 
@@ -199,7 +200,6 @@ class SettingsAPI:
             )
 
         try:
-            import winshell
             from win32com.client import Dispatch
 
             lnk = self._autostart_lnk()
