@@ -6,8 +6,14 @@
 import json
 import time
 import logging
+import urllib.parse
 
 import httpx
+
+def _safe_header(value) -> str:
+    """HTTP 响应头只允许 latin-1; 渠道名/路由组名可能含中文(如"魔搭"),
+    直接放入会导致 uvicorn 写头时 UnicodeEncodeError -> 整请求 500。"""
+    return urllib.parse.quote(str(value), safe="")
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -380,7 +386,7 @@ async def proxy_chat(
                 return StreamingResponse(
                     rec.record(_safe_orchestrate_gen(orch_gen)),
                     media_type="text/event-stream",
-                    headers={"X-Pipeline": requested_model},
+                    headers={"X-Pipeline": _safe_header(requested_model)},
                 )
             # 流式编排全部失败
             trace.mark_error(orch_err)
@@ -605,7 +611,7 @@ async def proxy_chat(
                 return StreamingResponse(
                     rec.record(_stream_with_fallback(resp, remaining)),
                     media_type="text/event-stream",
-                    headers={"X-Provider": provider.name, "X-Model": model},
+                    headers={"X-Provider": _safe_header(provider.name), "X-Model": _safe_header(model)},
                 )
             last_err = err
             if "429" in str(err) or "rate" in str(err).lower():
