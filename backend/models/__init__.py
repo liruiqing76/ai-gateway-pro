@@ -376,9 +376,46 @@ def _get_engine():
     """获取共享引擎(单例)"""
     global _engine
     if _engine is None:
-        from sqlalchemy import create_engine
+        from sqlalchemy import create_engine, event
         _engine = create_engine(get_db_url(), connect_args={"check_same_thread": False})
+        if _engine.url.get_backend_name() == "sqlite":
+            # WAL + NORMAL: 聊天记录页等读操作不再被并发写入阻塞;
+            # busy_timeout 兜住偶发写锁竞争
+            @event.listens_for(_engine, "connect")
+            def _sqlite_pragmas(dbapi_conn, rec):
+                cur = dbapi_conn.cursor()
+                try:
+                    cur.execute("PRAGMA journal_mode=WAL")
+                    cur.execute("PRAGMA synchronous=NORMAL")
+                    cur.execute("PRAGMA busy_timeout=5000")
+                finally:
+                    cur.close()
     return _engine
+
+
+# 高频列表/统计查询的幂等索引。chat_logs 单行含数百 KB 大文本, 没有覆盖索引时
+# count()/avg()/sum() 都要全表扫几百 MB —— 实测聊天列表 5.8s / 统计 5.2s。
+_PERF_INDEX_DDL = [
+    "CREATE INDEX IF NOT EXISTS ix_chat_logs_user_created "
+    "ON chat_logs(user_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_logs_stats_cover "
+    "ON chat_logs(user_id, created_at, success, is_pipeline, "
+    "prompt_chars, completion_chars, total_chars)",
+    "CREATE INDEX IF NOT EXISTS ix_request_traces_user_created "
+    "ON request_traces(user_id, created_at)",
+]
+
+
+def _ensure_perf_indexes(engine):
+    """create_all 不会给已存在的表补索引, 这里幂等补齐"""
+    import sqlalchemy as sa
+    try:
+        with engine.begin() as conn:
+            for ddl in _PERF_INDEX_DDL:
+                conn.execute(sa.text(ddl))
+    except Exception:
+        import logging
+        logging.getLogger("gateway").exception("DB perf index creation failed")
 
 
 def create_tables():
@@ -386,6 +423,7 @@ def create_tables():
     engine = _get_engine()
     Base.metadata.create_all(engine)
     _migrate_columns(engine)
+    _ensure_perf_indexes(engine)
     return engine
 
 

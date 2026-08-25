@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy import func
+from sqlalchemy.orm import defer
 
 from backend.auth.middleware import get_current_user_any
 from backend.models import get_session, ChatLog
@@ -41,10 +42,20 @@ async def list_chats(
             q = q.filter_by(is_pipeline=True)
 
         total = q.count()
-        rows = q.order_by(ChatLog.created_at.desc()).offset(offset).limit(limit).all()
+        # 关键性能优化: 延迟加载大文本列(单条 prompt 可达 40 万字符),
+        # 预览用 SQL substr 只取前 201 字符 —— 否则每页 50 条要从 SQLite
+        # 捞 ~8MB 文本再在 Python 里截断, 实测单页 5.8s
+        rows = (
+            q.options(defer(ChatLog.prompt_text), defer(ChatLog.completion_text))
+            .add_columns(func.substr(ChatLog.prompt_text, 1, 201).label("prompt_head"))
+            .order_by(ChatLog.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
         return {
             "total": total, "limit": limit, "offset": offset,
-            "data": [_row_summary(r) for r in rows],
+            "data": [_row_summary(r, head) for r, head in rows],
         }
     finally:
         session.close()
@@ -161,9 +172,15 @@ async def cleanup_chats(
 # 序列化
 # ─────────────────────────────────────────────
 
-def _row_summary(r: ChatLog) -> dict:
-    """列表摘要: prompt 截断前 200 字"""
-    p = r.prompt_text or ""
+def _row_summary(r: ChatLog, prompt_head: str | None = None) -> dict:
+    """列表摘要: prompt 截断前 200 字。
+    prompt_head 来自 SQL substr(列表路径, 大文本列已延迟加载不落内存);
+    为 None 时回退读 ORM 属性(详情等路径)。"""
+    if prompt_head is None:
+        p = r.prompt_text or ""
+        preview = (p[:200] + "…") if len(p) > 200 else p
+    else:
+        preview = (prompt_head + "…") if len(prompt_head) > 200 else prompt_head
     return {
         "id": r.id,
         "request_id": r.request_id,
@@ -173,7 +190,7 @@ def _row_summary(r: ChatLog) -> dict:
         "is_stream": r.is_stream,
         "is_pipeline": r.is_pipeline,
         "pipeline_mode": r.pipeline_mode,
-        "prompt_preview": (p[:200] + "…") if len(p) > 200 else p,
+        "prompt_preview": preview,
         "prompt_chars": r.prompt_chars,
         "completion_chars": r.completion_chars,
         "total_chars": r.total_chars,
