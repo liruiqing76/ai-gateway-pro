@@ -64,13 +64,23 @@
           <span style="font-size:12px;font-family:monospace">{{ formatTime(row.created_at) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="150">
+      <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="170">
         <template #default="{ row }">
           <div>
             <span style="font-weight:500">{{ row.original_model || '-' }}</span>
             <el-tag v-if="row.request_type === 'speed_test'" type="info" size="small" style="margin-left:4px">{{ $t('traces.probeTag') }}</el-tag>
             <el-tag v-if="row.is_pipeline" size="small" type="info" style="margin-left:4px">{{ row.pipeline_mode }}</el-tag>
+            <div v-if="row.resolved_model && row.resolved_model !== row.original_model"
+                 style="font-size:11px;color:var(--gw-text-secondary);font-family:monospace">
+              → {{ row.resolved_model }}
+            </div>
           </div>
+        </template>
+      </el-table-column>
+      <el-table-column :label="$t('chats.inputSummary')" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span v-if="row.prompt_preview" style="font-size:12px">{{ row.prompt_preview }}</span>
+          <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
       <el-table-column prop="provider_name" :label="$t('traces.actualProvider')" min-width="120">
@@ -85,9 +95,10 @@
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="total_tokens" label="Token" width="95" align="right">
+      <el-table-column prop="total_tokens" label="Token" width="110" align="right">
         <template #default="{ row }">
-          <span v-if="row.total_tokens">{{ Number(row.total_tokens).toLocaleString() }}</span>
+          <span v-if="row.total_tokens" :title="$t('requests.charsCaption', { chars: Number(row.total_chars || 0).toLocaleString() })"
+                style="font-size:12px">{{ Number(row.total_tokens).toLocaleString() }}</span>
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
@@ -103,8 +114,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="$t('traces.tags')" width="110" align="center">
+      <el-table-column :label="$t('traces.tags')" width="140" align="center">
         <template #default="{ row }">
+          <el-tag v-if="row.circuit_breaker_hit" type="warning" size="small" style="margin:2px">{{ $t('traces.circuitBreaker') }}</el-tag>
+          <el-tag v-if="row.rate_limit_hit" type="danger" size="small" style="margin:2px">{{ $t('traces.rateLimit') }}</el-tag>
           <el-tag v-if="row.is_stream" type="info" size="small" style="margin:2px">{{ $t('traces.streaming') }}</el-tag>
         </template>
       </el-table-column>
@@ -154,6 +167,14 @@
               <el-tag :type="detailRow.success ? 'success' : 'danger'" size="small">{{ detailRow.success ? $t('common.success') : $t('common.failed') }}</el-tag>
             </div>
             <div v-if="detailRow.error_msg" style="grid-column:1/-1"><span class="detail-key">{{ $t('traces.error') }}:</span> <span style="color:var(--gw-color-danger)">{{ detailRow.error_msg }}</span></div>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="detailRow.circuit_breaker_hit || detailRow.rate_limit_hit">
+          <h4>{{ $t('traces.circuitLimit') }}</h4>
+          <div class="detail-grid">
+            <div v-if="detailRow.circuit_breaker_hit"><el-tag type="warning" size="small">{{ $t('traces.circuitBreakerHit') }}</el-tag></div>
+            <div v-if="detailRow.rate_limit_hit"><el-tag type="danger" size="small">{{ $t('traces.rateLimitHitCooldown', { seconds: detailRow.cooldown_seconds }) }}</el-tag></div>
           </div>
         </div>
 

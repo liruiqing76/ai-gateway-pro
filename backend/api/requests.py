@@ -28,7 +28,9 @@ router = APIRouter(prefix="/api/requests", tags=["requests"])
 _TRACE_META = """
     SELECT id, request_id, created_at, original_model, model_name,
            provider_name, total_tokens, latency_ms, success, error_msg,
-           request_type, is_pipeline, pipeline_mode, is_stream
+           request_type, is_pipeline, pipeline_mode, is_stream,
+           resolved_model, selection_strategy, selection_reason,
+           circuit_breaker_hit, rate_limit_hit
     FROM request_traces WHERE user_id = :uid
 """
 
@@ -100,6 +102,11 @@ async def list_requests(
                 "is_pipeline": bool(tr["is_pipeline"]),
                 "pipeline_mode": tr["pipeline_mode"],
                 "is_stream": bool(tr["is_stream"]),
+                "resolved_model": tr["resolved_model"],
+                "selection_strategy": tr["selection_strategy"],
+                "selection_reason": tr["selection_reason"],
+                "circuit_breaker_hit": bool(tr["circuit_breaker_hit"]),
+                "rate_limit_hit": bool(tr["rate_limit_hit"]),
                 "has_trace": True,
                 "has_chat": has_chat,
             })
