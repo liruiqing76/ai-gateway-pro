@@ -132,7 +132,7 @@
     <div style="margin-top:16px;display:flex;justify-content:center">
       <el-pagination
         v-model:current-page="currentPage"
-        :page-size="50"
+        :page-size="20"
         :total="totalCount"
         layout="prev, pager, next"
         @current-change="loadRequests"
@@ -276,8 +276,8 @@ async function loadRequests() {
   loading.value = true
   try {
     const params = {
-      limit: 50,
-      offset: (currentPage.value - 1) * 50,
+      limit: 20,
+      offset: (currentPage.value - 1) * 20,
     }
     if (filterModel.value) params.model = filterModel.value
     if (filterSuccess.value !== null && filterSuccess.value !== '') params.success = filterSuccess.value

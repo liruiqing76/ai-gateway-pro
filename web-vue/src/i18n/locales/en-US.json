@@ -14,6 +14,7 @@
       "aliases": "Model Aliases",
       "traces": "Request Traces",
       "chats": "Chat History",
+      "requests": "Requests",
       "experience": "Experience",
       "settings": "Settings"
     }
@@ -356,6 +357,18 @@
     "refreshModels": "Refresh models",
     "refreshFailed": "Refresh failed"
   },
+  "requests": {
+    "pageTitle": "Requests",
+    "pageDesc": "Full record of every API call: routing trace + input/output content (merged from Request Traces and Chat History)",
+    "totalTokensCard": "Total Tokens",
+    "charsCaption": "{chars} chars",
+    "detailTitle": "Request Detail",
+    "totalChars": "Chars",
+    "cleanup": "Cleanup",
+    "cleanupPrompt": "Keep records from the last how many days? (traces and contents are cleaned together, default 30)",
+    "cleanupInvalid": "Enter days (positive integer)",
+    "cleanupDone": "Cleaned: {traces} traces · {chats} chats"
+  },
   "routers": {
     "title": "Router Group Management",
     "checking": "Checking...",
@@ -398,18 +411,6 @@
     "autoClassifyDone": "Auto classification done. You can adjust the selection manually",
     "deleted": "Deleted",
     "deleteFailed": "Delete failed: "
-  },
-  "requests": {
-    "pageTitle": "Requests",
-    "pageDesc": "Full record of every API call: routing trace + input/output content (merged from Request Traces and Chat History)",
-    "totalTokensCard": "Total Tokens",
-    "charsCaption": "{chars} chars",
-    "detailTitle": "Request Detail",
-    "totalChars": "Chars",
-    "cleanup": "Cleanup",
-    "cleanupPrompt": "Keep records from the last how many days? (traces and contents are cleaned together, default 30)",
-    "cleanupInvalid": "Enter days (positive integer)",
-    "cleanupDone": "Cleaned: {traces} traces · {chats} chats"
   },
   "traces": {
     "pageTitle": "Request Trace Logs",
