@@ -68,7 +68,11 @@ async def fetch_upstream_models(base_url: str, api_key: str) -> list[str]:
     if not base.endswith("/v1"):
         candidates.append(f"{base}/v1/models")
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {}
+    # 免 key 渠道(空密钥, 如 opencode zen 匿名档)不带 Authorization,
+    # 否则拼出非法头 b'Bearer ' 被 httpx 直接拒绝
+    if api_key and api_key.strip():
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
     last_err = ""
     async with httpx.AsyncClient(timeout=20) as client:
         for url in candidates:
@@ -255,19 +259,24 @@ async def create_provider(
                 # 拉取失败不阻塞渠道创建, 仅提示
                 logger.warning("auto fetch models failed for %s: %s", data.name, e.detail)
 
-        provider = Provider(
-            user_id=user.id,
-            name=data.name,
-            base_url=data.base_url,
-            api_key_encrypted=encrypt_secret(data.api_key),
-            models=models,
-            disabled_models=[],
-            free_only=data.free_only,
-            enabled=True,
-        )
-        session.add(provider)
-        session.commit()
-        session.refresh(provider)
+        try:
+            provider = Provider(
+                user_id=user.id,
+                name=data.name,
+                base_url=data.base_url,
+                api_key_encrypted=encrypt_secret(data.api_key),
+                models=models,
+                disabled_models=[],
+                free_only=data.free_only,
+                enabled=True,
+            )
+            session.add(provider)
+            session.commit()
+            session.refresh(provider)
+        except Exception:
+            # 落库失败必须留痕(此前打包环境无控制台, 500 静默无迹)
+            logger.exception("create provider failed for %s", data.name)
+            raise HTTPException(status_code=500, detail="写入渠道失败, 详情见日志")
 
         # 自动重建路由组(快速/日常/识图)
         groups = rebuild_user_routers(session, user.id)
@@ -322,19 +331,33 @@ async def apply_template(
 
     session = get_session()
     try:
-        provider = Provider(
-            user_id=user.id,
-            name=tpl["name"],
-            base_url=tpl["base_url"],
-            api_key_encrypted=encrypt_secret(data.api_key),
-            models=models,
-            disabled_models=[],
-            free_only=tpl.get("free_only", True),
-            enabled=True,
-        )
-        session.add(provider)
-        session.commit()
-        session.refresh(provider)
+        # 重名保护: 模板渠道已存在时给出明确提示(否则裸 500 前端只会显示"添加失败")
+        exists = session.query(Provider).filter_by(
+            user_id=user.id, name=tpl["name"]
+        ).first()
+        if exists:
+            raise HTTPException(
+                status_code=400,
+                detail=f"渠道「{tpl['name']}」已存在, 请直接在列表中编辑它",
+            )
+
+        try:
+            provider = Provider(
+                user_id=user.id,
+                name=tpl["name"],
+                base_url=tpl["base_url"],
+                api_key_encrypted=encrypt_secret(data.api_key),
+                models=models,
+                disabled_models=[],
+                free_only=tpl.get("free_only", True),
+                enabled=True,
+            )
+            session.add(provider)
+            session.commit()
+            session.refresh(provider)
+        except Exception:
+            logger.exception("apply template failed for %s", tpl["name"])
+            raise HTTPException(status_code=500, detail="写入渠道失败, 详情见日志")
 
         # 自动重建路由组
         groups = rebuild_user_routers(session, user.id)
@@ -372,6 +395,24 @@ async def fetch_models(
 # ============================================================
 # 刷新指定渠道的模型列表(渠道表格「刷新模型」按钮)
 # ============================================================
+
+
+# 非对话类模型黑名单: NVIDIA 等平台 /v1/models 返回全集(embed/翻译/安全/图像生成等),
+# 直接落库会把渠道撑爆并污染路由兜底, 刷新拉取时过滤掉。
+_NON_CHAT_KEYWORDS = (
+    "embed", "retriever", "translate", "guard", "safety", "reward",
+    "detector", "parse", "calibration", "clip", "deplot", "kosmos",
+    "diffusion", "vila", "neva", "ising", "omni", "synthetic",
+    "nemo-retriever", "nv-embed", "embedqa", "riva", "nemotron-parse",
+    "3-super-free", "x-preview-f-free",
+)
+
+
+def filter_chat_models(models):
+    """只保留对话/生成类模型 ID(排除黑名单关键词)。"""
+    return [m for m in models if not any(k in m.lower() for k in _NON_CHAT_KEYWORDS)]
+
+
 @router.post("/{provider_id}/refresh-models")
 async def refresh_provider_models(
     provider_id: int,
@@ -383,11 +424,15 @@ async def refresh_provider_models(
         p = session.query(Provider).filter_by(id=provider_id, user_id=user.id).first()
         if not p:
             raise HTTPException(status_code=404, detail="渠道不存在")
-        api_key = decrypt_secret(p.api_key_encrypted)
+        try:
+            api_key = decrypt_secret(p.api_key_encrypted)
+        except Exception:
+            # 免 key 匿名渠道(如 opencode zen)存的是空串/未加密数据:
+            # 按无密钥渠道拉取, 而不是让解密异常把整个接口打成 500
+            api_key = ""
         models = await fetch_upstream_models(p.base_url, api_key)
-
-        # 保留用户禁用的模型标记
-        p.models = models
+        models = filter_chat_models(models)  # 过滤非对话模型, 防止渠道被全量污染
+        p.models = models  # 过滤结果必须落库(此前漏赋值导致刷新按钮假成功)
         session.commit()
 
         groups = rebuild_user_routers(session, user.id)
