@@ -116,7 +116,8 @@
     </div>
 
     <!-- 详情弹窗 -->
-    <el-dialog :title="$t('chats.detailTitle')" v-model="detailVisible" width="780px" top="6vh">
+    <el-dialog :title="$t('chats.detailTitle')" v-model="detailVisible" width="780px" top="6vh"
+      append-to-body class="gw-detail-dialog">
       <div v-if="detailRow" class="chat-detail">
         <div class="detail-section">
           <h4>{{ $t('chats.requestInfo') }}</h4>

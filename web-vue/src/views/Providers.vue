@@ -31,6 +31,7 @@
         <el-table-column :label="$t('providers.actions')" width="200" align="center">
           <template #default="{row}">
             <el-button size="small" text @click="edit(row)">{{ $t('common.edit') }}</el-button>
+            <el-button size="small" text :loading="refreshingId === row.id" @click="refreshModels(row)">{{ $t('providers.refreshModels') }}</el-button>
             <el-button size="small" text type="danger" @click="del(row)">{{ $t('common.delete') }}</el-button>
           </template>
         </el-table-column>
@@ -104,6 +105,7 @@ const providers = ref([])
 const totalModels = computed(() => providers.value.reduce((n, p) => n + ((p.models || []).length), 0))
 const dialogVisible = ref(false)
 const editing = ref(false)
+const refreshingId = ref(null)
 const editId = ref(null)
 const form = ref({ name: '', base_url: '', api_key: '', models_str: '' })
 
@@ -221,6 +223,19 @@ async function save() {
     ElMessage.error(e.response?.data?.detail || t('providers.saveFailed'))
   } finally {
     saving.value = false
+  }
+}
+
+async function refreshModels(row) {
+  refreshingId.value = row.id
+  try {
+    const resp = await api.post(`/api/providers/${row.id}/refresh-models`)
+    ElMessage.success(resp.data?.msg || t('providers.refreshModels'))
+    await loadProviders()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || t('providers.refreshFailed'))
+  } finally {
+    refreshingId.value = null
   }
 }
 

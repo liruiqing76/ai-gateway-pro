@@ -175,7 +175,7 @@ body {
   border-bottom: 1px solid var(--gw-border);
   flex-shrink: 0;
 }
-.sidebar-logo-icon { font-size: 24px; color: var(--gw-primary); display: inline-flex; }
+.sidebar-logo-icon { width: 30px; height: 30px; object-fit: contain; display: inline-flex; flex-shrink: 0; }
 .sidebar-logo-text {
   font-size: 18px;
   font-weight: 600;
@@ -265,22 +265,6 @@ body {
 }
 .welcome-box h2 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
 .welcome-box p { font-size: 14px; color: var(--gw-muted-foreground); }
-
-/* ---- 登录页 ---- */
-.login-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f5f5f7 0%, #e8ecf4 50%, #f0f4ff 100%);
-}
-.login-card {
-  width: 400px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 36px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.08);
-}
 
 /* ---- 检测结果卡片 ---- */
 .check-banner {
@@ -375,4 +359,11 @@ body {
 .el-button--default {
   --el-button-border-color: var(--gw-border);
   --el-button-hover-border-color: var(--gw-primary);
+}
+/* ---- 详情弹窗(append-to-body 挂到 body 下) ----
+   内容超过视口时弹窗体内部滚动, 不再被 .main-area 的 overflow:hidden
+   或屏幕底边截断; Traces/Chats 详情共用 */
+.el-dialog.gw-detail-dialog .el-dialog__body {
+  max-height: calc(90vh - 120px);
+  overflow-y: auto;
 }

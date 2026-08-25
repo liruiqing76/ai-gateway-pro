@@ -138,7 +138,8 @@
     </div>
 
     <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" :title="$t('traces.detailTitle')" width="640px">
+    <el-dialog v-model="detailVisible" :title="$t('traces.detailTitle')" width="640px"
+      append-to-body class="gw-detail-dialog">
       <div v-if="detailRow" class="trace-detail">
         <div class="detail-section">
           <h4>{{ $t('traces.requestInfo') }}</h4>
