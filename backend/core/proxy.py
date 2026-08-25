@@ -122,8 +122,10 @@ async def forward_non_stream(
     api_key: str,
     model: str,
     body: dict,
+    timeout_seconds: int | None = None,
 ) -> tuple[dict | None, str | None]:
-    """转发非流式请求,返回 (response_dict, error)"""
+    """转发非流式请求,返回 (response_dict, error)。
+    timeout_seconds 可覆盖全局 PROXY_TIMEOUT_SECONDS(如视觉子调用需要快速失败)。"""
     key = f"{provider.name}||{model}"
     url = provider.base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -138,22 +140,40 @@ async def forward_non_stream(
     try:
         start = time.time()
         resp = await http_client.post(
-            url, json=req_body, headers=headers, timeout=settings.PROXY_TIMEOUT_SECONDS
+            url, json=req_body, headers=headers,
+            timeout=timeout_seconds or settings.PROXY_TIMEOUT_SECONDS,
         )
         latency = (time.time() - start) * 1000
 
         if resp.status_code >= 400:
             logger.warning("upstream %d from %s: %s", resp.status_code, provider.name, resp.text[:200])
             # 429/限流 → 冷却(指数退避)
-            # 429/限流 → 冷却(指数退避)
             if resp.status_code == 429:
                 circuit_breaker.record_rate_limit(key)
-                circuit_breaker.record_fail(key)
+            # 其他 4xx 是确定性失败(上下文超限/不支持字段/鉴权等), 同样计入熔断:
+            # 只对 429 记录会导致确定性 400 每次请求都原样重试, 慢请求反复烧时间
+            circuit_breaker.record_fail(key)
             quality_tracker.record(key, "fail", latency)
             return None, f"upstream {resp.status_code}"
 
         try:
             data = resp.json()
+            # 空回复防护: 200 但所有 choice 既无内容也无工具调用 —— 对 Agent
+            # 是致命"假成功"(客户端只能拿空消息重试), 视为失败换下一个候选。
+            # 有 tool_calls/function_call 的纯工具响应是合法的, 不算空。
+            has_payload = False
+            for ch in data.get("choices") or []:
+                msg = ch.get("message") or {}
+                if (msg.get("content") or "").strip() \
+                        or msg.get("tool_calls") or msg.get("function_call"):
+                    has_payload = True
+                    break
+            if not has_payload:
+                logger.warning("upstream %s returned empty response (no content/tool_calls): %s",
+                               provider.name, resp.text[:120])
+                circuit_breaker.record_fail(key)
+                quality_tracker.record(key, "fail", latency)
+                return None, "upstream empty response"
             quality_tracker.record(key, "ok", latency)
             circuit_breaker.record_success(key)
             data["model"] = f"{provider.name} · {model}"
@@ -161,7 +181,7 @@ async def forward_non_stream(
         except json.JSONDecodeError:
             logger.warning("upstream non-json from %s: %s", provider.name, resp.text[:200])
             circuit_breaker.record_fail(key)
-            quality_tracker.record(key, "fail", latency)
+            quality_tracker.record(key, "fail")
             return None, "upstream non-json"
 
     except httpx.RequestError as e:
@@ -202,9 +222,36 @@ async def forward_stream(
     req_body = json.loads(json.dumps(body))
     req_body["model"] = MODEL_ALIASES.get(model, model)
 
+    # 流式请求显式向上游索要 token 用量: OpenAI 兼容上游默认不在流里回传
+    # usage, 必须带 stream_options.include_usage 才有; 否则网关只能字符估算,
+    # 与官方计费口径偏差很大。个别上游不认识该字段会 400, 捕获后去掉重试。
+    if req_body.get("stream"):
+        so = req_body.get("stream_options")
+        if isinstance(so, dict):
+            so.setdefault("include_usage", True)
+        else:
+            req_body["stream_options"] = {"include_usage": True}
+
     try:
-        req = http_client.build_request("POST", url, json=req_body, headers=headers)
+        # 请求级超时: 读超时(首字节/相邻块间隔)超过 PROXY_STREAM_READ_TIMEOUT
+        # 即放弃当前候选换下一个, 避免"慢模型卡满 120s 全局超时"
+        req_timeout = httpx.Timeout(
+            connect=15,
+            read=settings.PROXY_STREAM_READ_TIMEOUT,
+            write=30,
+            pool=10,
+        )
+        req = http_client.build_request("POST", url, json=req_body, headers=headers,
+                                        timeout=req_timeout)
         resp = await http_client.send(req, stream=True)
+        if resp.status_code == 400 and req_body.pop("stream_options", None) is not None:
+            err_bytes = await resp.aread()
+            await resp.aclose()
+            logger.warning("upstream %s rejected stream_options (%s), retrying without it",
+                           provider.name, err_bytes.decode('utf-8', errors='ignore')[:120])
+            req = http_client.build_request("POST", url, json=req_body, headers=headers,
+                                            timeout=req_timeout)
+            resp = await http_client.send(req, stream=True)
     except httpx.RequestError as e:
         logger.warning("stream connect error to %s: %s", provider.name, e)
         circuit_breaker.record_fail(key)
@@ -231,6 +278,7 @@ async def forward_stream(
         done_sent = False
         first_line_yielded = False
         stream_ok = False
+        got_content = False  # 是否出现过有效内容(回答文本/工具调用)
         try:
             async for line in resp.aiter_lines():
                 if not line:
@@ -260,6 +308,14 @@ async def forward_stream(
                     obj = json.loads(data_str)
                     if "model" in obj and isinstance(obj.get("model"), str):
                         obj["model"] = f"{provider.name} · {model}"
+                    # 空回复检测: 只有 role/finish 的空壳块不算内容;
+                    # reasoning_content 不算(只有思考没有答案对 Agent 等于失败)
+                    for ch in obj.get("choices") or []:
+                        delta = ch.get("delta") or ch.get("message") or {}
+                        if (delta.get("content") or "").strip() \
+                                or delta.get("tool_calls") or delta.get("function_call"):
+                            got_content = True
+                            break
                     stream_ok = True
                     yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode()
                 except json.JSONDecodeError:
@@ -270,6 +326,14 @@ async def forward_stream(
         finally:
             # 空流(上游 200 但没有任何有效行)同样视为失败, 计入熔断/质量统计
             if not stream_ok:
+                circuit_breaker.record_fail(key)
+                quality_tracker.record(key, "fail")
+            elif not got_content:
+                # "假成功": 流格式正常但整条没有一个内容/工具调用块。
+                # 实测 nemotron 对超大上下文就是秒回空消息, 质量分却一直
+                # 记成功霸占排序, 客户端(Hermes)只能无限重试。记失败让它降权。
+                logger.warning("upstream %s/%s returned empty stream (no content/tool_calls), marking fail",
+                               provider.name, model)
                 circuit_breaker.record_fail(key)
                 quality_tracker.record(key, "fail")
             # 注意:finally 中不能 yield,否则抛 RuntimeError
@@ -346,26 +410,26 @@ def _sort_by_strategy(
 
     # 收集每个候选的分数
     scored = []
-    for p, m, k in raw:
+    for idx, (p, m, k) in enumerate(raw):
         score = quality_tracker.get_score(k)
         # 无该模型记录时, 用同渠道已知模型延迟估计(按模型排序, 渠道慢则其新模型自动靠后)
         latency = (quality_tracker.get_avg_latency(k)
                    or quality_tracker.avg_latency_for_provider(p.name)
                    or 1e9)
         is_open = circuit_breaker.is_open(k)
-        scored.append((p, m, k, score, latency, is_open))
+        scored.append((p, m, k, score, latency, is_open, idx))
 
     if strategy == "fastest":
-        # 延迟最低优先, 熔断中的最后
-        scored.sort(key=lambda x: (1 if x[5] else 0, x[4]))
+        # 延迟最低优先, 熔断中的最后; 同分同时按声明顺序(组序)
+        scored.sort(key=lambda x: (1 if x[5] else 0, x[4], x[6]))
     elif strategy == "stable":
-        # 成功率最高优先, 同分按延迟
-        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4]))
+        # 成功率最高优先, 同分按延迟, 再按声明顺序(组序/渠道序)
+        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4], x[6]))
     else:  # quality (默认)
-        # 质量分最高优先, 同分按延迟
-        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4]))
+        # 质量分最高优先, 同分按延迟, 再按声明顺序(组序/渠道序)
+        scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4], x[6]))
 
-    return [(p, m, k) for p, m, k, _, _, _ in scored]
+    return [(p, m, k) for p, m, k, _, _, _, _ in scored]
 
 
 def is_1m_model(model: str) -> bool:

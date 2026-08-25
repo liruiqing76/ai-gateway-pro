@@ -67,12 +67,45 @@ class TestForwardNonStream:
     async def test_success_records_stats(self):
         from backend.core.proxy import forward_non_stream
 
-        client = await self._client_with(200, {"choices": [], "usage": {}})
+        client = await self._client_with(200, {"choices": [
+            {"message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}
+        ], "usage": {}})
         provider = FakeProvider()
         resp, err = await forward_non_stream(client, provider, "key", "model-x", {"model": "model-x"})
 
         assert err is None
         assert resp["model"] == "TestUp · model-x"  # 标记渠道
+
+    @pytest.mark.asyncio
+    async def test_empty_response_rejected(self):
+        """200 但所有 choice 无内容也无工具调用(假成功) → 视为失败换候选"""
+        from backend.core.proxy import forward_non_stream
+
+        client = await self._client_with(200, {"choices": [
+            {"message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}
+        ], "usage": {"completion_tokens": 0}})
+        provider = FakeProvider()
+        resp, err = await forward_non_stream(client, provider, "key", "model-x", {"model": "model-x"})
+
+        assert resp is None
+        assert err == "upstream empty response"
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
+
+    @pytest.mark.asyncio
+    async def test_tool_call_only_response_not_rejected(self):
+        """纯工具调用响应(content 为空但有 tool_calls)是合法的, 不能当空回复"""
+        from backend.core.proxy import forward_non_stream
+
+        client = await self._client_with(200, {"choices": [
+            {"message": {"role": "assistant", "content": "",
+                         "tool_calls": [{"id": "1", "function": {"name": "f", "arguments": "{}"}}]},
+             "finish_reason": "tool_calls"}
+        ], "usage": {}})
+        provider = FakeProvider()
+        resp, err = await forward_non_stream(client, provider, "key", "model-x", {"model": "model-x"})
+
+        assert err is None
+        assert resp["choices"][0]["message"]["tool_calls"]
 
     @pytest.mark.asyncio
     async def test_429_records_rate_limit_and_backoff(self):
@@ -101,6 +134,20 @@ class TestForwardNonStream:
         assert resp is None
         assert err == "upstream 401"
         assert quality_tracker.get_score("TestUp||model-x") < 0
+
+    @pytest.mark.asyncio
+    async def test_4xx_opens_circuit_after_threshold(self):
+        """确定性 4xx 必须计入熔断: 连续失败达到阈值后该候选被禁用, 
+        否则慢/坏的模型每次请求都会原样重试"""
+        from backend.core.proxy import forward_non_stream
+
+        key = "TestUp||model-x"
+        for _ in range(3):
+            client = await self._client_with(400, text='{"error":"context too long"}')
+            resp, err = await forward_non_stream(client, FakeProvider(), "key", "model-x", {"model": "model-x"})
+            assert resp is None
+            assert err == "upstream 400"
+        assert circuit_breaker.is_open(key)
 
     @pytest.mark.asyncio
     async def test_non_json_body(self):
@@ -226,6 +273,46 @@ class TestForwardStream:
         chunks = [c async for c in gen]
         assert chunks == []
         assert circuit_breaker._states["TestUp||model-x"].fails >= 1
+
+    @pytest.mark.asyncio
+    async def test_stream_without_content_marks_fail(self):
+        """流格式正常但整条没有内容/工具调用块(nemotron 空回复) → 记失败降权"""
+        from backend.core.proxy import forward_stream
+
+        lines = [
+            "data: " + json.dumps({"choices": [{"delta": {"role": "assistant"}, "finish_reason": None}]}),
+            "data: " + json.dumps({"choices": [{"delta": {}, "finish_reason": "stop"}]}),
+            "data: [DONE]", "",
+        ]
+        client = self._make_client(200, lines)
+        provider = FakeProvider()
+        gen, err = await forward_stream(client, provider, "key", "model-x", {"model": "model-x"})
+
+        assert err is None
+        collected = b"".join([c async for c in gen]).decode()
+        assert "[DONE]" in collected  # 数据照常透传给客户端
+        # 但质量统计记为失败: 下次排序该模型降权, 连续 3 次熔断换模型
+        assert circuit_breaker._states["TestUp||model-x"].fails >= 1
+        assert quality_tracker.get_stats("TestUp||model-x")["fail"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_stream_with_tool_call_not_marked_fail(self):
+        """纯 tool_calls 流是合法的, 不能当空回复惩罚"""
+        from backend.core.proxy import forward_stream
+
+        lines = [
+            "data: " + json.dumps({"choices": [{"delta": {
+                "tool_calls": [{"id": "1", "function": {"name": "f", "arguments": "{}"}}]}}]}),
+            "data: [DONE]", "",
+        ]
+        client = self._make_client(200, lines)
+        provider = FakeProvider()
+        gen, err = await forward_stream(client, provider, "key", "model-x", {"model": "model-x"})
+
+        assert err is None
+        _ = b"".join([c async for c in gen])
+        assert "TestUp||model-x" not in circuit_breaker._states \
+            or circuit_breaker._states["TestUp||model-x"].fails == 0
 
     @pytest.mark.asyncio
     async def test_stream_marks_success_on_valid_first_chunk(self):

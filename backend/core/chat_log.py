@@ -4,6 +4,7 @@
 # 写入失败绝不影响主链路(与 save_trace 同风格)
 # ============================================================
 
+import asyncio
 import json
 import logging
 import time
@@ -82,28 +83,89 @@ def extract_completion_text(resp: dict) -> str:
         return ""
 
 
-def extract_delta_text(chunk_bytes: bytes) -> str:
-    """从流式 chunk 字节里提取 delta.content 文本(用于流式拼接)。
-    chunk 形如 b'data: {...}\\n\\n' 或 b'data: [DONE]\\n\\n'
+def _iter_sse_data(chunk_bytes) -> list[str]:
+    """取出一个网络层 chunk 里所有 SSE data 载荷(不含 [DONE])。
+
+    一个 TCP chunk 常包含多个 'data: {...}\\n\\n' 事件(高吞吐上游/末尾usage块
+    与内容块合并时), 按单事件解析会 json 失败而漏掉 usage。
     """
     try:
         if isinstance(chunk_bytes, bytes):
-            line = chunk_bytes.decode("utf-8", errors="ignore")
+            text = chunk_bytes.decode("utf-8", errors="ignore")
         else:
-            line = str(chunk_bytes)
-        if not line.startswith("data: "):
-            return ""
-        data_str = line.split("data: ", 1)[1].strip()
-        if not data_str or data_str == "[DONE]":
-            return ""
-        obj = json.loads(data_str)
+            text = str(chunk_bytes)
+        outs = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload and payload != "[DONE]":
+                outs.append(payload)
+        return outs
+    except Exception:
+        return []
+
+
+def extract_delta_text(chunk_bytes: bytes) -> str:
+    """从流式 chunk 字节里提取 delta.content 文本(用于流式拼接)。"""
+    parts = []
+    for payload in _iter_sse_data(chunk_bytes):
+        try:
+            obj = json.loads(payload)
+        except Exception:
+            continue
         choices = obj.get("choices") or []
         if not choices:
-            return ""
+            continue  # include_usage 的末块 choices 为空, 只有 usage
         delta = choices[0].get("delta", {}) or {}
-        return str(delta.get("content", "") or "")
-    except Exception:
-        return ""
+        t = delta.get("content")
+        if t:
+            parts.append(str(t))
+    return "".join(parts)
+
+
+def extract_usage_from_chunk(chunk_bytes) -> Optional[dict]:
+    """从 OpenAI 兼容流式 chunk 提取 token usage(供流式结束统计)。
+
+    遍历 chunk 内全部 SSE 事件, 取最后一次出现的 usage
+    (include_usage 的最终统计块在流末尾; 顶层 "usage" 或嵌套 choices[0].usage)。
+    """
+    usage = None
+    for payload in _iter_sse_data(chunk_bytes):
+        try:
+            obj = json.loads(payload)
+        except Exception:
+            continue
+        u = obj.get("usage")
+        if not u and obj.get("choices"):
+            choice = obj["choices"][0]
+            if isinstance(choice, dict):
+                u = choice.get("usage")
+        if isinstance(u, dict) and any(
+                u.get(k) is not None
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens")):
+            usage = u
+    return usage
+
+
+def estimate_tokens_from_text(text: str) -> int:
+    """无上游 usage 时按内容估算(贴近主流 tokenizer 官方计费口径):
+    CJK 字符约 1 字 ≈ 1 token; 拉丁/数字/符号约 4 字符 ≈ 1 token。
+    旧的 chars//3 折中对中文严重低估(实际差 3 倍以上), 已弃用。"""
+    if not text:
+        return 0
+    cjk = 0
+    for ch in text:
+        o = ord(ch)
+        if (0x4E00 <= o <= 0x9FFF or   # CJK 统一表意
+                0x3400 <= o <= 0x4DBF or   # 扩展A
+                0x3000 <= o <= 0x303F or   # CJK 标点
+                0xFF00 <= o <= 0xFFEF or   # 全角形式
+                0x3040 <= o <= 0x30FF):    # 日文假名
+            cjk += 1
+    other = len(text) - cjk
+    return max(1, cjk + (other + 3) // 4)
 
 
 # ─────────────────────────────────────────────
@@ -189,10 +251,15 @@ class StreamRecorder:
         self.pipeline_mode = pipeline_mode
         self.start_time = start_time or time.time()
         self._accum = []
+        # 上游在流式末 chunk 回传的 usage(可能有, 也可能没有)
+        self._last_usage = None
 
     def _consume(self, chunk: bytes) -> bytes:
-        """解析并累加文本, 返回原 chunk(透传给客户端)"""
+        """解析并累加文本/usage, 返回原 chunk(透传给客户端)"""
         try:
+            usage = extract_usage_from_chunk(chunk)
+            if usage:
+                self._last_usage = usage
             txt = extract_delta_text(chunk)
             if txt:
                 self._accum.append(txt)
@@ -200,20 +267,45 @@ class StreamRecorder:
             pass
         return chunk
 
-    async def record(self, gen):
-        """异步迭代 gen, yield 每个 chunk 并累加文本; 正常结束时保存成功记录。"""
+    def _token_counts(self):
+        """流式结束时的 token 数: 优先用上游回传的真实 usage,
+        拿不到按内容估算(CJK 感知), 贴近官方计费口径。"""
+        usage = self._last_usage
+        if usage:
+            pt = int(usage.get("prompt_tokens") or 0)
+            ct = int(usage.get("completion_tokens") or 0)
+            tt = int(usage.get("total_tokens") or 0)
+            if pt or ct or tt:
+                if tt and not (pt or ct):
+                    pt, ct = tt, 0
+                return pt, ct
+        return (estimate_tokens_from_text(self.prompt_text or ""),
+                estimate_tokens_from_text("".join(self._accum)))
+
+    async def record(self, gen, on_done=None):
+        """异步迭代 gen, yield 每个 chunk 并累加文本; 正常结束时保存成功记录。
+
+        on_done(rec, prompt_tokens, completion_tokens, success) 在写库后被调用,
+        用于流式成功请求的用量/配额统计(回调失败不影响主链路)。
+        客户端断开(任务取消)按失败处理, 不记成功调用。
+        """
         success = True
         error_msg = None
         try:
             async for chunk in gen:
                 yield self._consume(chunk)
+        except asyncio.CancelledError:
+            success = False
+            error_msg = "client disconnected"
+            raise
         except Exception as e:
             success = False
             error_msg = str(e)
             logger.warning("chat_log stream record error: %s", e)
         finally:
             latency = int((time.time() - self.start_time) * 1000)
-            save_chat_log(
+            pt, ct = self._token_counts()
+            rec = save_chat_log(
                 user_id=self.user_id,
                 request_id=self.request_id,
                 original_model=self.original_model,
@@ -221,6 +313,8 @@ class StreamRecorder:
                 model_name=self.model_name,
                 prompt_text=self.prompt_text,
                 completion_text="".join(self._accum),
+                prompt_tokens=pt,
+                completion_tokens=ct,
                 is_stream=True,
                 is_pipeline=self.is_pipeline,
                 pipeline_mode=self.pipeline_mode,
@@ -228,3 +322,8 @@ class StreamRecorder:
                 success=success,
                 error_msg=error_msg,
             )
+            if on_done is not None and rec is not None:
+                try:
+                    on_done(rec, pt, ct, success)
+                except Exception:
+                    logger.exception("stream on_done callback failed")

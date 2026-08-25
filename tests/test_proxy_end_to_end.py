@@ -388,7 +388,7 @@ class TestPipelineE2E:
         )
         assert resp.status_code == 200
         assert resp.headers.get("content-type", "").startswith("text/event-stream")
-        assert resp.headers["X-Pipeline"] == "relay:group1/group2"
+        assert resp.headers["X-Pipeline"] == "relay%3Agroup1%2Fgroup2"  # 响应头 latin-1 安全编码
         assert "流式" in resp.text
 
     def test_review_stream_success(self, env, monkeypatch):
