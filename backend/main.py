@@ -29,6 +29,7 @@ from backend.api.usage import router as usage_router
 from backend.api.aliases import router as aliases_router
 from backend.api.traces import router as traces_router
 from backend.api.chats import router as chats_router
+from backend.api.requests import router as requests_router
 from backend.api.license import router as license_router
 from backend.api.experience import router as experience_router
 from backend.api.free_sources import router as free_sources_router
@@ -283,6 +284,7 @@ app.include_router(usage_router)
 app.include_router(aliases_router)
 app.include_router(traces_router)
 app.include_router(chats_router)
+app.include_router(requests_router)
 app.include_router(license_router)
 app.include_router(experience_router)
 app.include_router(free_sources_router)

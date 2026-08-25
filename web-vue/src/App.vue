@@ -38,11 +38,8 @@
             <el-menu-item index="aliases">
               <el-icon><Connection /></el-icon><span>{{ $t('app.nav.aliases') }}</span>
             </el-menu-item>
-            <el-menu-item index="traces">
-              <el-icon><List /></el-icon><span>{{ $t('app.nav.traces') }}</span>
-            </el-menu-item>
-            <el-menu-item index="chats">
-              <el-icon><ChatLineRound /></el-icon><span>{{ $t('app.nav.chats') }}</span>
+            <el-menu-item index="requests">
+              <el-icon><List /></el-icon><span>{{ $t('app.nav.requests') }}</span>
             </el-menu-item>
             <el-menu-item index="experience">
               <el-icon><MagicStick /></el-icon><span>{{ $t('app.nav.experience') }}</span>
@@ -95,8 +92,7 @@
             <Checkin v-if="activePage === 'checkin'" />
             <Routers v-if="activePage === 'routers'" />
             <Aliases v-if="activePage === 'aliases'" />
-            <Traces v-if="activePage === 'traces'" />
-            <Chats v-if="activePage === 'chats'" />
+            <Requests v-if="activePage === 'requests'" />
             <Experience v-if="activePage === 'experience'" />
             <Settings v-if="activePage === 'settings'" />
           </div>
@@ -122,8 +118,7 @@ import Billing from './views/Billing.vue'
 import Checkin from './views/Checkin.vue'
 import Routers from './views/Routers.vue'
 import Aliases from './views/Aliases.vue'
-import Traces from './views/Traces.vue'
-import Chats from './views/Chats.vue'
+import Requests from './views/Requests.vue'
 import Experience from './views/Experience.vue'
 import Settings from './views/Settings.vue'
 

@@ -399,6 +399,18 @@
     "deleted": "已删除",
     "deleteFailed": "删除失败: "
   },
+  "requests": {
+    "pageTitle": "请求记录",
+    "pageDesc": "每次 API 请求的完整记录: 路由过程 + 输入输出内容(原「请求链路」与「聊天记录」合并)",
+    "totalTokensCard": "累计 Token",
+    "charsCaption": "共 {chars} 字符",
+    "detailTitle": "请求详情",
+    "totalChars": "总字符",
+    "cleanup": "清理记录",
+    "cleanupPrompt": "保留最近几天的记录?(链路与内容将一并清理, 输入数字, 默认30)",
+    "cleanupInvalid": "请输入天数(正整数)",
+    "cleanupDone": "已清理: 链路 {traces} 条 · 聊天 {chats} 条"
+  },
   "traces": {
     "pageTitle": "请求链路日志",
     "pageDesc": "记录每次请求的完整决策链路：走了哪个模型、延迟多少、为什么选它、熔断/冷却命中情况。",

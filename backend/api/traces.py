@@ -74,7 +74,6 @@ async def trace_stats(
     user: User = Depends(get_current_user_any),
     days: int = Query(7, ge=1, le=90, description="统计天数"),
 ):
-    """请求链路统计概览"""
     session = get_session()
     try:
         since = datetime.now() - timedelta(days=days)
@@ -153,6 +152,23 @@ async def cleanup_traces(
     except Exception as e:
         session.rollback()
         raise HTTPException(500, f"清理失败: {e}")
+    finally:
+        session.close()
+
+
+@router.get("/{trace_id}")
+async def get_trace(
+    trace_id: int,
+    user: User = Depends(get_current_user_any),
+):
+    """单条链路详情(含各阶段明细), 供合并后的请求记录页调用。
+    注意必须注册在 /stats 等字面量路由之后, 否则会被路径参数抢先匹配。"""
+    session = get_session()
+    try:
+        r = session.query(RequestTrace).filter_by(id=trace_id, user_id=user.id).first()
+        if not r:
+            raise HTTPException(404, "记录不存在")
+        return _record_to_dict(r)
     finally:
         session.close()
 

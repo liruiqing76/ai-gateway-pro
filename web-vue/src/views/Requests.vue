@@ -1,8 +1,8 @@
 <template>
   <div>
-    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">{{ $t('traces.pageTitle') }}</h2>
+    <h2 style="font-size:18px;font-weight:600;margin-bottom:16px">{{ $t('requests.pageTitle') }}</h2>
     <p style="color:var(--gw-text-secondary);margin-bottom:20px;font-size:14px">
-      {{ $t('traces.pageDesc') }}
+      {{ $t('requests.pageDesc') }}
     </p>
 
     <!-- 统计卡片 -->
@@ -18,12 +18,9 @@
         <div class="stat-label">{{ $t('traces.successRate') }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ stats.avg_latency_ms }}ms</div>
-        <div class="stat-label">{{ $t('traces.avgLatency') }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value text-orange">{{ stats.circuit_breaker_hits }}</div>
-        <div class="stat-label">{{ $t('traces.circuitBreakerHits') }}</div>
+        <div class="stat-value text-blue">{{ formatNum(stats.sum_total_tokens) }}</div>
+        <div class="stat-label">{{ $t('requests.totalTokensCard') }}</div>
+        <div class="stat-sublabel">{{ $t('requests.charsCaption', { chars: formatNum(stats.sum_total_chars) }) }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" style="color:var(--gw-muted-foreground)">{{ stats.probe_count ?? 0 }}</div>
@@ -34,14 +31,11 @@
     <!-- 操作栏 -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0">
       <div style="display:flex;gap:8px">
-        <el-button @click="loadTraces" :loading="loading">
+        <el-button @click="loadRequests" :loading="loading">
           <el-icon><Refresh /></el-icon> {{ $t('common.refresh') }}
         </el-button>
-        <el-button @click="loadStats" :loading="statsLoading">
-          <el-icon><DataAnalysis /></el-icon> {{ $t('traces.stats') }}
-        </el-button>
-        <el-button type="danger" plain @click="cleanupTraces">
-          <el-icon><Delete /></el-icon> {{ $t('traces.cleanupLogs') }}
+        <el-button type="danger" plain @click="cleanupAll" :loading="cleanupLoading">
+          <el-icon><Delete /></el-icon> {{ $t('requests.cleanup') }}
         </el-button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -49,9 +43,6 @@
           <el-option :label="$t('traces.typeAll')" value="" />
           <el-option :label="$t('traces.typeReal')" value="real" />
           <el-option :label="$t('traces.typeProbe')" value="speed_test" />
-        </el-select>
-        <el-select v-model="filterGroup" :placeholder="$t('traces.groupLabel')" style="width:150px" clearable @change="onFilterChange">
-          <el-option v-for="g in groupOptions" :key="g" :label="g" :value="g" />
         </el-select>
         <el-input v-model="filterModel" :placeholder="$t('traces.filterByModel')" style="width:200px" clearable @clear="onFilterChange" @keyup.enter="onFilterChange">
           <template #prefix><el-icon><Search /></el-icon></template>
@@ -61,12 +52,12 @@
           <el-option :label="$t('common.success')" :value="true" />
           <el-option :label="$t('common.failed')" :value="false" />
         </el-select>
-        <el-switch v-model="filterPipeline" :active-text="$t('traces.orchestration')" :inactive-text="$t('traces.all')" @change="loadTraces" style="margin-left:8px" />
+        <el-switch v-model="filterPipeline" :active-text="$t('traces.orchestration')" :inactive-text="$t('traces.all')" @change="onFilterChange" style="margin-left:8px" />
       </div>
     </div>
 
-    <!-- 链路列表 -->
-    <el-table :data="traces" style="width:100%" v-loading="loading" stripe row-key="id"
+    <!-- 合并列表 -->
+    <el-table :data="rows" style="width:100%" v-loading="loading" stripe row-key="rowKey"
       :default-sort="{ prop: 'created_at', order: 'descending' }">
       <el-table-column prop="created_at" :label="$t('traces.time')" width="170" sortable>
         <template #default="{ row }">
@@ -76,27 +67,33 @@
       <el-table-column prop="original_model" :label="$t('traces.requestModel')" min-width="150">
         <template #default="{ row }">
           <div>
-            <span style="font-weight:500">{{ row.original_model }}</span>
+            <span style="font-weight:500">{{ row.original_model || '-' }}</span>
             <el-tag v-if="row.request_type === 'speed_test'" type="info" size="small" style="margin-left:4px">{{ $t('traces.probeTag') }}</el-tag>
             <el-tag v-if="row.is_pipeline" size="small" type="info" style="margin-left:4px">{{ row.pipeline_mode }}</el-tag>
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="provider_name" :label="$t('traces.actualProvider')" min-width="130">
+      <el-table-column prop="provider_name" :label="$t('traces.actualProvider')" min-width="120">
         <template #default="{ row }">
           <span v-if="row.provider_name">{{ row.provider_name }}</span>
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="model_name" :label="$t('traces.actualModel')" min-width="160">
+      <el-table-column prop="model_name" :label="$t('traces.actualModel')" min-width="150">
         <template #default="{ row }">
           <span v-if="row.model_name" style="font-family:monospace;font-size:12px">{{ row.model_name }}</span>
           <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
+      <el-table-column prop="total_tokens" label="Token" width="95" align="right">
+        <template #default="{ row }">
+          <span v-if="row.total_tokens">{{ Number(row.total_tokens).toLocaleString() }}</span>
+          <span v-else style="color:var(--gw-text-secondary)">-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="latency_ms" :label="$t('traces.latency')" width="90" sortable>
         <template #default="{ row }">
-          <span :class="latencyClass(row.latency_ms)">{{ row.latency_ms }}ms</span>
+          <span :class="latencyClass(row.latency_ms)">{{ row.latency_ms ? row.latency_ms + 'ms' : '-' }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="success" :label="$t('traces.status')" width="70" align="center">
@@ -106,17 +103,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="$t('traces.tags')" width="120" align="center">
+      <el-table-column :label="$t('traces.tags')" width="110" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.circuit_breaker_hit" type="warning" size="small" style="margin:2px">{{ $t('traces.circuitBreaker') }}</el-tag>
-          <el-tag v-if="row.rate_limit_hit" type="danger" size="small" style="margin:2px">{{ $t('traces.rateLimit') }}</el-tag>
           <el-tag v-if="row.is_stream" type="info" size="small" style="margin:2px">{{ $t('traces.streaming') }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="Token" width="100">
-        <template #default="{ row }">
-          <span v-if="row.total_tokens" style="font-size:12px">{{ row.total_tokens.toLocaleString() }}</span>
-          <span v-else style="color:var(--gw-text-secondary)">-</span>
         </template>
       </el-table-column>
       <el-table-column :label="$t('traces.actions')" width="80" align="center">
@@ -133,23 +122,25 @@
         :page-size="50"
         :total="totalCount"
         layout="prev, pager, next"
-        @current-change="loadTraces"
+        @current-change="loadRequests"
       />
     </div>
 
-    <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" :title="$t('traces.detailTitle')" width="640px"
+    <!-- 详情弹窗: 链路信息 + 输入输出内容 -->
+    <el-dialog v-model="detailVisible" :title="$t('requests.detailTitle')" width="720px"
       append-to-body class="gw-detail-dialog">
-      <div v-if="detailRow" class="trace-detail">
+      <div v-if="detailRow" class="trace-detail" v-loading="detailLoading">
         <div class="detail-section">
           <h4>{{ $t('traces.requestInfo') }}</h4>
           <div class="detail-grid">
-            <div><span class="detail-key">{{ $t('traces.reqId') }}:</span> <code>{{ detailRow.request_id }}</code></div>
+            <div><span class="detail-key">{{ $t('traces.reqId') }}:</span> <code>{{ detailRow.request_id || '-' }}</code></div>
             <div><span class="detail-key">{{ $t('traces.time') }}:</span> {{ formatTime(detailRow.created_at) }}</div>
-            <div><span class="detail-key">{{ $t('traces.originalModel') }}:</span> {{ detailRow.original_model }}</div>
-            <div><span class="detail-key">{{ $t('traces.resolvedTarget') }}:</span> {{ detailRow.resolved_model || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.originalModel') }}:</span> {{ detailRow.original_model || '-' }}</div>
+            <div><span class="detail-key">{{ $t('traces.resolvedTarget') }}:</span> {{ detailRow.resolved_model || detailRow.model_name || '-' }}</div>
             <div><span class="detail-key">{{ $t('traces.strategy') }}:</span> {{ detailRow.selection_strategy || '-' }}</div>
             <div><span class="detail-key">{{ $t('traces.selectionReason') }}:</span> {{ detailRow.selection_reason || '-' }}</div>
+            <div><span class="detail-key">Token:</span> {{ detailRow.prompt_tokens || 0 }} → {{ detailRow.completion_tokens || 0 }} ({{ $t('traces.totalTokens', { total: detailRow.total_tokens || 0 }) }})</div>
+            <div v-if="detailRow.total_chars"><span class="detail-key">{{ $t('requests.totalChars') }}:</span> {{ Number(detailRow.total_chars).toLocaleString() }}</div>
           </div>
         </div>
 
@@ -158,20 +149,11 @@
           <div class="detail-grid">
             <div><span class="detail-key">{{ $t('traces.provider') }}:</span> {{ detailRow.provider_name || '-' }}</div>
             <div><span class="detail-key">{{ $t('traces.model') }}:</span> {{ detailRow.model_name || '-' }}</div>
-            <div><span class="detail-key">{{ $t('traces.latency') }}:</span> <span :class="latencyClass(detailRow.latency_ms)">{{ detailRow.latency_ms }}ms</span></div>
+            <div><span class="detail-key">{{ $t('traces.latency') }}:</span> <span :class="latencyClass(detailRow.latency_ms)">{{ detailRow.latency_ms ? detailRow.latency_ms + 'ms' : '-' }}</span></div>
             <div><span class="detail-key">{{ $t('traces.status') }}:</span>
               <el-tag :type="detailRow.success ? 'success' : 'danger'" size="small">{{ detailRow.success ? $t('common.success') : $t('common.failed') }}</el-tag>
             </div>
-            <div v-if="detailRow.error_msg"><span class="detail-key">{{ $t('traces.error') }}:</span> <span style="color:var(--gw-color-danger)">{{ detailRow.error_msg }}</span></div>
-            <div><span class="detail-key">Token:</span> {{ detailRow.prompt_tokens || 0 }} → {{ detailRow.completion_tokens || 0 }} ({{ $t('traces.totalTokens', { total: detailRow.total_tokens || 0 }) }})</div>
-          </div>
-        </div>
-
-        <div class="detail-section" v-if="detailRow.circuit_breaker_hit || detailRow.rate_limit_hit">
-          <h4>{{ $t('traces.circuitLimit') }}</h4>
-          <div class="detail-grid">
-            <div v-if="detailRow.circuit_breaker_hit"><el-tag type="warning" size="small">{{ $t('traces.circuitBreakerHit') }}</el-tag></div>
-            <div v-if="detailRow.rate_limit_hit"><el-tag type="danger" size="small">{{ $t('traces.rateLimitHitCooldown', { seconds: detailRow.cooldown_seconds }) }}</el-tag></div>
+            <div v-if="detailRow.error_msg" style="grid-column:1/-1"><span class="detail-key">{{ $t('traces.error') }}:</span> <span style="color:var(--gw-color-danger)">{{ detailRow.error_msg }}</span></div>
           </div>
         </div>
 
@@ -196,6 +178,22 @@
             </el-table-column>
           </el-table>
         </div>
+
+        <div class="detail-section" v-if="detailRow.prompt_text !== undefined">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h4 style="margin:0">{{ $t('chats.inputWithCount', { count: formatNum(detailRow.prompt_chars || (detailRow.prompt_text || '').length) }) }}</h4>
+            <el-button size="small" text @click="copyText(detailRow.prompt_text)">{{ $t('common.copy') }}</el-button>
+          </div>
+          <div class="text-box">{{ detailRow.prompt_text || $t('chats.emptyContent') }}</div>
+        </div>
+
+        <div class="detail-section" v-if="detailRow.completion_text !== undefined && detailRow.success">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h4 style="margin:0">{{ $t('chats.outputWithCount', { count: formatNum(detailRow.completion_chars || (detailRow.completion_text || '').length) }) }}</h4>
+            <el-button size="small" text @click="copyText(detailRow.completion_text)">{{ $t('common.copy') }}</el-button>
+          </div>
+          <div class="text-box">{{ detailRow.completion_text || $t('chats.emptyContent') }}</div>
+        </div>
       </div>
     </el-dialog>
   </div>
@@ -205,30 +203,33 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Search, Delete, DataAnalysis } from '@element-plus/icons-vue'
+import { Refresh, Search, Delete } from '@element-plus/icons-vue'
 import api from '../api'
 
 const { t } = useI18n()
 
-const traces = ref([])
+const rows = ref([])
 const stats = ref(null)
 const loading = ref(false)
-const statsLoading = ref(false)
+const cleanupLoading = ref(false)
 const totalCount = ref(0)
 const currentPage = ref(1)
 const filterModel = ref('')
 const filterSuccess = ref(null)
 const filterPipeline = ref(false)
-const filterRequestType = ref('')   // '' 全部 / real 真实 / speed_test 速度探测
-const filterGroup = ref('')         // 路由组名, '' = 全部
-const groupOptions = ref([])
+const filterRequestType = ref('')
 const detailVisible = ref(false)
 const detailRow = ref(null)
+const detailLoading = ref(false)
 
 function formatTime(iso) {
   if (!iso) return '-'
   const d = new Date(iso)
   return d.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatNum(n) {
+  return Number(n || 0).toLocaleString()
 }
 
 function latencyClass(ms) {
@@ -238,20 +239,19 @@ function latencyClass(ms) {
   return 'text-red'
 }
 
-/** 筛选条件变化: 回到第一页再查询 */
 function onFilterChange() {
   currentPage.value = 1
-  loadTraces()
+  loadRequests()
 }
 
-async function loadGroups() {
+async function loadStats() {
   try {
-    const resp = await api.get('/api/routers')
-    groupOptions.value = Object.keys(resp.data?.data || {}).sort()
-  } catch (e) { /* 分组下拉失败不阻塞列表 */ }
+    const resp = await api.get('/api/requests/stats', { params: { days: 7 } })
+    stats.value = resp.data
+  } catch (e) { /* 统计失败不阻塞列表 */ }
 }
 
-async function loadTraces() {
+async function loadRequests() {
   loading.value = true
   try {
     const params = {
@@ -259,84 +259,114 @@ async function loadTraces() {
       offset: (currentPage.value - 1) * 50,
     }
     if (filterModel.value) params.model = filterModel.value
-    if (filterSuccess.value !== null) params.success = filterSuccess.value
-    if (filterPipeline.value) params.pipeline_only = true
+    if (filterSuccess.value !== null && filterSuccess.value !== '') params.success = filterSuccess.value
     if (filterRequestType.value) params.request_type = filterRequestType.value
-    if (filterGroup.value) params.group = filterGroup.value
-
-    const resp = await api.get('/api/traces', { params })
-    traces.value = resp.data.data || []
+    if (filterPipeline.value) params.pipeline_only = true
+    const resp = await api.get('/api/requests', { params })
+    rows.value = (resp.data.data || []).map(r => ({ ...r, rowKey: `${r.trace_id || 't'}-${r.chat_id || 'c'}` }))
     totalCount.value = resp.data.total || 0
   } catch (e) {
-    ElMessage.error(t('traces.loadFailed'))
+    console.error('loadRequests failed', e)
   } finally {
     loading.value = false
   }
 }
 
-async function loadStats() {
-  statsLoading.value = true
+/** 详情懒加载: 列表行只有摘要, 打开时按需拉链路明细与聊天全文 */
+async function showDetail(row) {
+  detailVisible.value = true
+  detailLoading.value = true
+  detailRow.value = { ...row }
+  const jobs = []
+  if (row.has_trace && row.trace_id) {
+    jobs.push(api.get(`/api/traces/${row.trace_id}`).then(resp => {
+      Object.assign(detailRow.value, resp.data)
+    }).catch(() => {}))
+  }
+  if (row.has_chat && row.chat_id) {
+    jobs.push(api.get(`/api/chats/${row.chat_id}`).then(resp => {
+      Object.assign(detailRow.value, resp.data)
+    }).catch(() => {}))
+  }
+  await Promise.all(jobs)
+  detailLoading.value = false
+}
+
+async function copyText(text) {
   try {
-    const resp = await api.get('/api/traces/stats', { params: { days: 7 } })
-    stats.value = resp.data
+    await navigator.clipboard.writeText(text || '')
+    ElMessage.success(t('common.copied') || 'Copied')
   } catch (e) {
-    ElMessage.error(t('traces.statsLoadFailed'))
-  } finally {
-    statsLoading.value = false
+    ElMessage.error(t('common.copyFailed') || 'Copy failed')
   }
 }
 
-function showDetail(row) {
-  detailRow.value = row
-  detailVisible.value = true
-}
-
-async function cleanupTraces() {
+async function cleanupAll() {
   try {
-    await ElMessageBox.confirm(t('traces.cleanupConfirmMsg', { days: 30 }), t('traces.cleanupConfirmTitle'), { type: 'warning' })
-    const resp = await api.delete('/api/traces/cleanup', { params: { days: 30 } })
-    ElMessage.success(t('traces.cleanupDone', { count: resp.data.deleted }))
-    await loadTraces()
+    const { value } = await ElMessageBox.prompt(
+      t('requests.cleanupPrompt'), t('requests.cleanup'), {
+        confirmButtonText: t('common.confirm') || 'OK',
+        cancelButtonText: t('common.cancel') || 'Cancel',
+        inputValue: '30',
+        inputPattern: /^\d+$/,
+        inputErrorMessage: t('requests.cleanupInvalid'),
+      })
+    const days = Math.max(1, Math.min(parseInt(value || '30', 10), 365))
+    cleanupLoading.value = true
+    const [tr, cr] = await Promise.all([
+      api.delete('/api/traces/cleanup', { params: { days } }),
+      api.delete('/api/chats/cleanup', { params: { days } }),
+    ])
+    ElMessage.success(t('requests.cleanupDone', {
+      traces: tr.data.deleted || 0, chats: cr.data.deleted || 0,
+    }))
+    currentPage.value = 1
+    await Promise.all([loadRequests(), loadStats()])
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('traces.cleanupFailed'))
+    if (e !== 'cancel' && e?.toString() !== 'cancel') {
+      // 用户取消不提示; 其余失败静默(删除类操作前端已二次确认)
+    }
+  } finally {
+    cleanupLoading.value = false
   }
 }
 
 onMounted(() => {
-  loadTraces()
+  loadRequests()
   loadStats()
-  loadGroups()
 })
 </script>
 
 <style scoped>
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
-  margin-bottom: 16px;
 }
 .stat-card {
-  background: var(--gw-surface);
+  background: var(--gw-card);
   border: 1px solid var(--gw-border);
-  border-radius: 12px;
+  border-radius: var(--gw-radius-md);
   padding: 16px;
-  text-align: center;
 }
 .stat-value {
   font-size: 24px;
-  font-weight: 700;
-  color: var(--gw-text-primary);
+  font-weight: 600;
 }
 .stat-label {
   font-size: 12px;
   color: var(--gw-text-secondary);
   margin-top: 4px;
 }
+.stat-sublabel {
+  font-size: 11px;
+  color: var(--gw-muted-foreground);
+  margin-top: 2px;
+}
 .text-green { color: #22c55e; }
 .text-yellow { color: #eab308; }
 .text-red { color: #ef4444; }
-.text-orange { color: #f97316; }
+.text-blue { color: var(--gw-primary); }
 
 .trace-detail h4 {
   font-size: 14px;
@@ -367,5 +397,16 @@ code {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
+}
+.text-box {
+  background: var(--gw-surface-secondary);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 8px;
 }
 </style>
