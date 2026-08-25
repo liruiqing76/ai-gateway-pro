@@ -348,7 +348,9 @@
     "confirmTitle": "提示",
     "deleted": "已删除",
     "deleteFailed": "删除失败: ",
-    "footerSummary": "共 {count} 个渠道 · {models} 个模型 · 点击右上角添加新渠道"
+    "footerSummary": "共 {count} 个渠道 · {models} 个模型 · 点击右上角添加新渠道",
+    "refreshModels": "刷新模型",
+    "refreshFailed": "刷新失败"
   },
   "routers": {
     "title": "路由组管理",

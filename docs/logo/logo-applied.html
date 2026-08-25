@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>法斗 Logo 已应用 · 效果核对</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:#0f1419; color:#e6e6e6; padding:40px 20px; }
+h1 { text-align:center; font-size:26px; margin-bottom:6px;
+  background:linear-gradient(90deg,#4fc3f7,#ab47bc); -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent; background-clip:text; }
+.sub { text-align:center; color:#8b95a1; margin-bottom:36px; font-size:13px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:22px; max-width:1100px; margin:0 auto; }
+.card { background:#1a212b; border:1px solid #2a3441; border-radius:14px; padding:22px; }
+.card h2 { font-size:16px; margin-bottom:14px; color:#4fc3f7; }
+.row { display:flex; align-items:center; gap:16px; margin:12px 0; flex-wrap:wrap; }
+.label { font-size:12px; color:#8b95a1; min-width:96px; }
+.chip-light, .chip-dark { width:120px; height:80px; display:flex; align-items:center;
+  justify-content:center; border-radius:10px; }
+.chip-light { background:#F5F5F7; }
+.chip-dark { background:#1b1f27; }
+img.tile { width:56px; height:56px; }
+.fav { display:flex; gap:20px; align-items:center; }
+.fav .tab { background:#fff; border:1px solid #e3e3e3; border-radius:8px; padding:10px 14px;
+  display:flex; align-items:center; gap:8px; color:#333; font-size:13px; }
+.note { font-size:12px; color:#b0b8c1; line-height:1.7; margin-top:10px; }
+.ok { color:#5fcf80; }
+pre { background:#0a0e13; padding:12px; border-radius:8px; font-size:11px; color:#9fb3c8;
+  overflow:auto; margin-top:10px; }
+</style>
+</head>
+<body>
+  <h1>🐶 法斗 Logo · 已应用到项目</h1>
+  <p class="sub">方案 A（navy+橙 扁平法斗）已替换 favicon、App 内品牌图标、任务栏/托盘图标</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>① 浏览器标签 favicon</h2>
+      <div class="fav">
+        <img src="../web/favicon.png" style="width:48px;height:48px">
+        <div class="tab"><img src="../web/favicon.png" style="width:16px;height:16px">智能网关</div>
+      </div>
+      <p class="note">文件：<span class="ok">web/favicon.png</span> + web-vue/public/favicon.png<br>
+      引用：web/index.html（及 web-vue/index.html）已改为 /favicon.png</p>
+    </div>
+
+    <div class="card">
+      <h2>② App 内品牌图标（浅色 / 深色）</h2>
+      <div class="row">
+        <span class="label">侧边栏 / 登录</span>
+        <div class="chip-light"><img class="tile" src="../web/frenchie-logo.png"></div>
+        <div class="chip-dark"><img class="tile" src="../web/frenchie-logo.png"></div>
+      </div>
+      <p class="note">白色圆角底：浅色主题下白底隐形只显法斗，深色主题下显白底芯片，两种都清晰。<br>
+      已替换 App.vue 侧边栏与 Login.vue 登录页的闪电图标。</p>
+    </div>
+
+    <div class="card">
+      <h2>③ 任务栏 / 托盘 / 窗口图标</h2>
+      <div class="row">
+        <span class="label">app.ico</span>
+        <img src="../desktop/assets/app.ico" style="width:64px;height:64px">
+        <img src="../desktop/assets/app.ico" style="width:32px;height:32px">
+        <img src="../desktop/assets/app.ico" style="width:16px;height:16px">
+      </div>
+      <p class="note">文件：<span class="ok">desktop/assets/app.ico</span>（内嵌 16/24/32/48/64/128/256 七档）<br>
+      驱动：PyInstaller 打包 exe 图标 + 运行时托盘/窗口标题栏图标（desktop.py 读取）。</p>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:1100px;margin:22px auto 0;">
+    <h2>生成与重建命令</h2>
+    <pre># 用方案 A 源图重新生成全部 logo 资源（favicon / app.ico / 应用内图标）
+.venv\Scripts\python.exe scripts\build_frenchie_logo.py
+
+# 改完 web-vue 前端后重新构建到 web/（桌面端实际加载目录）
+cd web-vue &amp;&amp; npm run build</pre>
+    <p class="note">源图：<span class="ok">docs/logo/A_professional_minimalist_flat_*.png</span>（选中方案 A）。
+    重新打包桌面 exe 后，任务栏上的 exe 图标即更新为新法斗。</p>
+  </div>
+</body>
+</html>

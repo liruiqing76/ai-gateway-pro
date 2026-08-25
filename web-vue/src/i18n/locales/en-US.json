@@ -348,7 +348,9 @@
     "confirmTitle": "Notice",
     "deleted": "Deleted",
     "deleteFailed": "Failed to delete: ",
-    "footerSummary": "{count} channels · {models} models · Use the buttons above to add"
+    "footerSummary": "{count} channels · {models} models · Use the buttons above to add",
+    "refreshModels": "Refresh models",
+    "refreshFailed": "Refresh failed"
   },
   "routers": {
     "title": "Router Group Management",

@@ -34,5 +34,5 @@ export function setLocale(locale) {
   if (!SUPPORT_LOCALES.includes(locale)) return
   i18n.global.locale.value = locale
   try { localStorage.setItem(LOCALE_KEY, locale) } catch (e) { /* ignore */ }
-  document.title = `⚡ ${i18n.global.t('app.title')}`
+  document.title = `${i18n.global.t('app.title')}`
 }
