@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -170,6 +170,53 @@ async def lifespan(app: FastAPI):
                 logger.warning("opencode 健康检测异常: %s", e)
             await asyncio.sleep(settings.ZEN_HEALTH_CHECK_MINUTES * 60)
 
+    # 每日额度重置: 魔搭等渠道按天发放免费额度, 每天 00:10 清空质量/熔断统计,
+    # 让额度恢复的渠道自动重新参与路由(白天额度用尽则由熔断/排序自动绕开);
+    # 同时把锚点已过零点的用户当日额度清零(幂等), 界面无需等待真实调用即可见新一天。
+    def _sweep_user_quota() -> int:
+        """把 quota_reset_at 已过期的用户清零并推进锚点到明天零点, 返回受影响行数"""
+        session = None
+        try:
+            from backend.models import get_session
+            from sqlalchemy import text
+            session = get_session()
+            now_s = datetime.now()
+            tm = now_s.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            res = session.execute(
+                text("UPDATE users SET quota_used_today = 0, quota_reset_at = :tm "
+                     "WHERE quota_reset_at IS NOT NULL AND quota_reset_at < :now"),
+                {"tm": tm, "now": now_s},
+            )
+            session.commit()
+            return res.rowcount or 0
+        except Exception as e:
+            logger.warning("用户额度日清零 sweep 失败: %s", e)
+            return 0
+        finally:
+            if session is not None:
+                session.close()
+
+    async def _daily_quota_reset_loop():
+        # 启动补跑: 应用在零点之后才启动/重启时, 已过期用户的额度立即清零(幂等)
+        swept = _sweep_user_quota()
+        if swept:
+            logger.info("每日额度重置: 启动补跑清零 %s 个用户的当日额度", swept)
+        while True:
+            now = datetime.now()
+            target = (now.replace(hour=0, minute=10, second=0, microsecond=0)
+                      + timedelta(days=1))
+            await asyncio.sleep(max(1, (target - now).total_seconds()))
+            try:
+                from backend.core.scheduler import quality_tracker
+                from backend.core.circuit import circuit_breaker
+                quality_tracker.reset_all()
+                circuit_breaker.reset_all()
+                swept = _sweep_user_quota()
+                logger.info("每日额度重置: 质量/熔断已清空, 用户额度清零 %s 个, 渠道重新公平路由", swept)
+            except Exception as e:
+                logger.warning("每日额度重置异常: %s", e)
+
+    quota_reset_task = asyncio.create_task(_daily_quota_reset_loop())
     zen_sync_task = asyncio.create_task(_zen_sync_loop())
     zen_health_task = asyncio.create_task(_zen_health_loop())
     yield
@@ -178,12 +225,14 @@ async def lifespan(app: FastAPI):
     sync_task.cancel()
     zen_sync_task.cancel()
     zen_health_task.cancel()
+    quota_reset_task.cancel()
     try:
         await speed_task
         await summary_task
         await sync_task
         await zen_sync_task
         await zen_health_task
+        await quota_reset_task
     except asyncio.CancelledError:
         pass
     logger.info("智能网关 已停止")
@@ -210,8 +259,18 @@ app.add_middleware(
 WEB_DIR = Path(__file__).parent.parent / "web"
 if WEB_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(WEB_DIR / "assets")), name="assets")
-    app.mount("/favicon.svg", StaticFiles(directory=str(WEB_DIR), html=True), name="favicon")
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+
+# 站点图标 / 品牌 logo: 根路径直接返回, 桌面端(生产)与 dev 均可访问
+@app.get("/favicon.png")
+async def favicon_png():
+    return FileResponse(WEB_DIR / "favicon.png", media_type="image/png")
+
+
+@app.get("/frenchie-logo.png")
+async def frenchie_logo_png():
+    return FileResponse(WEB_DIR / "frenchie-logo.png", media_type="image/png")
 
 # 路由注册
 app.include_router(auth_router)

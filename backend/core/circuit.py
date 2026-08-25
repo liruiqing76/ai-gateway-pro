@@ -98,6 +98,10 @@ class CircuitBreaker:
         if key in self._states:
             del self._states[key]
 
+    def reset_all(self) -> None:
+        """清空全部熔断状态(每日额度渠道凌晨重置用)"""
+        self._states.clear()
+
     @property
     def open_keys(self) -> list[str]:
         """当前所有打开的键"""

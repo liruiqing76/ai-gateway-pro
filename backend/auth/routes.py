@@ -15,7 +15,9 @@ from backend.auth.security import (
     create_access_token, create_refresh_token, decode_token,
     check_login_lock, record_login_failure, reset_login_failures,
 )
-from backend.auth.middleware import get_current_user_from_jwt
+from backend.auth.middleware import (
+    get_current_user_from_jwt, ensure_quota_window, persist_quota_window,
+)
 from backend.models import get_session, User
 from backend.config import settings
 
@@ -195,6 +197,9 @@ async def refresh(data: RefreshIn):
 # ============================================================
 @router.get("/me")
 async def me(user: User = Depends(get_current_user_from_jwt)):
+    # 返回前先做自然日校准: 跨零点后即使还没有新调用, quota_used_today 也显示已重置
+    if ensure_quota_window(user):
+        persist_quota_window(user)
     return {
         **user.to_dict(),
         "api_key_masked": mask_secret(user.api_key),

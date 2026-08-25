@@ -102,28 +102,42 @@ def require_admin(user: User = Depends(get_current_user_from_jwt)) -> User:
     return user
 
 
-async def check_quota(user: User = Depends(get_current_user_from_api_key)) -> User:
-    """检查用户额度。每日额度按自然日计: 每天零点(本地时间)重置"""
+def ensure_quota_window(user: User) -> bool:
+    """自然日窗口校准(每日额度懒重置核心)。
+
+    - 锚点缺失: 只补齐到明天零点, 不清零已用次数(避免给超额用户变相续命)
+    - 锚点已过(跨零点): 清零当日用量, 锚点推进到明天零点
+    返回是否发生变更。供 API 调用链(check_quota)与各展示接口复用,
+    保证零点过后无需等待下一次真实调用, 读到的地方就能看到新一天额度。
+    """
     from datetime import datetime, timedelta
     now = datetime.now()
     tomorrow_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     changed = False
     if not user.quota_reset_at:
-        # 老数据缺锚点: 只补对齐到明天零点, 不清零已用次数(避免给超额用户变相续命)
         user.quota_reset_at = tomorrow_midnight
         changed = True
     elif user.quota_reset_at < now:
-        # 自然日已过: 零点清零, 下次重置=明天零点
         user.quota_used_today = 0
         user.quota_reset_at = tomorrow_midnight
         changed = True
-    if changed:
-        session = get_session()
-        try:
-            session.merge(user)
-            session.commit()
-        finally:
-            session.close()
+    return changed
+
+
+def persist_quota_window(user: User) -> None:
+    """把 ensure_quota_window 的变更写库(user 通常是已关闭 session 的游离实例)"""
+    session = get_session()
+    try:
+        session.merge(user)
+        session.commit()
+    finally:
+        session.close()
+
+
+async def check_quota(user: User = Depends(get_current_user_from_api_key)) -> User:
+    """检查用户额度。每日额度按自然日计: 每天零点(本地时间)重置"""
+    if ensure_quota_window(user):
+        persist_quota_window(user)
     if user.quota_used_today >= user.quota_daily:
         raise HTTPException(status_code=429, detail="今日额度已用完,请升级会员")
     return user

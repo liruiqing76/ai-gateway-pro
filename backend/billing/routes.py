@@ -9,7 +9,9 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from backend.auth.middleware import get_current_user_from_jwt
+from backend.auth.middleware import (
+    get_current_user_from_jwt, ensure_quota_window, persist_quota_window,
+)
 from backend.models import get_session, User, Order
 from backend.billing.plans import PLANS, get_plan
 
@@ -30,6 +32,9 @@ async def list_plans():
 @router.get("/me")
 async def my_billing(user: User = Depends(get_current_user_from_jwt)):
     """当前用户的计费信息"""
+    # 展示前先做自然日校准: 跨零点后即使还没有新调用, 界面也显示已重置的额度
+    if ensure_quota_window(user):
+        persist_quota_window(user)
     return {
         "tier": user.tier,
         "tier_expires_at": user.tier_expires_at.isoformat() if user.tier_expires_at else None,
