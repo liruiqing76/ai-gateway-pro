@@ -52,20 +52,29 @@
       </el-col>
     </el-row>
 
-    <!-- 按日 Token 趋势(近 30 天) -->
+    <!-- Token 趋势: 按日(近30天) / 按月(近12个月) -->
     <section class="usage-card" style="margin-bottom:24px">
       <div class="usage-head">
         <h3>{{ $t('dashboard.tokenTrend') }}</h3>
-        <span v-if="dailyList.length" class="usage-meta">{{ $t('dashboard.tokenTrendMeta', { days: dailyList.length }) }}</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span v-if="activeTrendList.length" class="usage-meta">
+            {{ trendMode === 'day' ? $t('dashboard.tokenTrendMeta', { days: activeTrendList.length })
+                              : $t('dashboard.tokenTrendMetaMonth', { months: activeTrendList.length }) }}
+          </span>
+          <el-radio-group v-model="trendMode" size="small" @change="onTrendModeChange">
+            <el-radio-button value="day">{{ $t('dashboard.viewDaily') }}</el-radio-button>
+            <el-radio-button value="month">{{ $t('dashboard.viewMonthly') }}</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
-      <div v-if="dailyMax > 0" class="trend-chart">
-        <div v-for="d in dailyList" :key="d.date" class="trend-col"
-             :title="`${d.date} · ${$t('dashboard.trendCalls', { n: d.calls })} · ${d.tokens.toLocaleString()} token`">
+      <div v-if="trendMax > 0" class="trend-chart">
+        <div v-for="d in activeTrendList" :key="d.date || d.month" class="trend-col"
+             :title="trendTitle(d)">
           <div class="trend-bar-wrap">
-            <div class="trend-bar" :style="{ height: Math.max(d.tokens / dailyMax * 100, d.tokens > 0 ? 4 : 1.5) + '%' }"
+            <div class="trend-bar" :style="{ height: Math.max(d.tokens / trendMax * 100, d.tokens > 0 ? 4 : 1.5) + '%' }"
                  :class="{ 'trend-bar-empty': d.tokens === 0 }"></div>
           </div>
-          <div class="trend-date">{{ d.date.slice(8) }}</div>
+          <div class="trend-date">{{ trendMode === 'day' ? (d.date || '').slice(8) : (d.month || '').slice(5) }}</div>
         </div>
       </div>
       <div v-else class="trend-empty">{{ $t('dashboard.noTokenData') }}</div>
@@ -109,11 +118,31 @@ const stats = ref({ used: 0, daily: 100, pct: 0, tierLabel: '', tierExpires: '',
 const usageList = ref([])
 const usageSummary = ref({ total: 0, today: 0, today_tokens: 0, failed: 0 })
 const dailyList = ref([])   // 近 N 天 [{date, calls, tokens}]
+const monthlyList = ref([]) // 近 N 月 [{month, calls, tokens}]
+const trendMode = ref('day')
 
+const activeTrendList = computed(() =>
+  trendMode.value === 'month' ? monthlyList.value : dailyList.value)
+const trendMax = computed(() =>
+  Math.max(...activeTrendList.value.map(d => d.tokens || 0), 0))
+// 30天合计仅在按日视图下作为"累计"口径; 按月视图下改为12个月总和
 const totalTokens = computed(() =>
-  dailyList.value.reduce((s, d) => s + (d.tokens || 0), 0))
-const dailyMax = computed(() =>
-  Math.max(...dailyList.value.map(d => d.tokens || 0), 0))
+  activeTrendList.value.reduce((s, d) => s + (d.tokens || 0), 0))
+
+function trendTitle(d) {
+  const label = d.date || d.month
+  const n = d.calls ?? 0
+  return `${label} · ${t('dashboard.trendCalls', { n })} · ${(d.tokens || 0).toLocaleString()} token`
+}
+
+async function onTrendModeChange(mode) {
+  if (mode === 'month' && !monthlyList.value.length) {
+    try {
+      const resp = await api.get('/api/usage/monthly?months=12')
+      monthlyList.value = resp.data.data || []
+    } catch (e) { /* 保持空列表 */ }
+  }
+}
 
 function tierLabel(tier) {
   if (tier === 'pro') return t('dashboard.tierPro')

@@ -67,12 +67,25 @@ class TestUsageSummary:
 
     def test_summary_with_data(self, client):
         c, token = client
-        from backend.models import get_session, User
+        from backend.models import get_session, User, ChatLog
         s = get_session()
         try:
             u = s.query(User).filter_by(email="usage@x.com").first()
             _insert_logs(u.id, n=5, success=True)
             _insert_logs(u.id, n=2, success=False)
+            # 失败数与"聊天记录"菜单同口径: 从 chat_logs 统计
+            # (生产环境 usage_logs 只写成功调用)
+            for i in range(2):
+                s.add(ChatLog(
+                    user_id=u.id,
+                    original_model="model-x",
+                    model_name="model-x",
+                    prompt_text="hi",
+                    total_tokens=10,
+                    success=False,
+                    error_msg="boom",
+                ))
+            s.commit()
         finally:
             s.close()
 
@@ -86,6 +99,31 @@ class TestUsageSummary:
     def test_summary_requires_auth(self, client):
         c, _ = client
         resp = c.get("/api/usage/summary")
+        assert resp.status_code == 401
+
+    def test_monthly_aggregation(self, client):
+        """按月聚合: 有数据的月计入调用与token, 空月份补零, 长度=请求月数"""
+        c, token = client
+        from backend.models import get_session, User
+        s = get_session()
+        try:
+            u = s.query(User).filter_by(email="usage@x.com").first()
+            _insert_logs(u.id, n=3)
+        finally:
+            s.close()
+
+        resp = c.get("/api/usage/monthly?months=6", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 6
+        # 列表从旧到新, 最后一个是当前月
+        assert data[-1]["calls"] == 3
+        assert data[-1]["tokens"] > 0
+        assert all(d["calls"] == 0 for d in data[:-1])
+
+    def test_monthly_requires_auth(self, client):
+        c, _ = client
+        resp = c.get("/api/usage/monthly")
         assert resp.status_code == 401
 
 

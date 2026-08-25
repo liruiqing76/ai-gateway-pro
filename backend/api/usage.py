@@ -34,9 +34,13 @@ def _serialize(row: UsageLog) -> dict:
 
 @router.get("/summary")
 async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
-    """聚合统计: 总调用数 / 今日调用数 / 今日 token / 失败数"""
+    """聚合统计: 总调用数 / 今日调用数 / 今日 token / 失败数。
+
+    失败数从 chat_logs 统计(与"聊天记录"菜单同口径): usage_logs 只记成功
+    调用, 旧实现这里恒为 0, 用户对比两个菜单时永远"对不上"。"""
     session = get_session()
     try:
+        from backend.models import ChatLog
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         total = session.query(func.count(UsageLog.id)).filter_by(user_id=user.id).scalar() or 0
         today = (
@@ -50,8 +54,8 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             .scalar() or 0
         )
         failed = (
-            session.query(func.count(UsageLog.id))
-            .filter(UsageLog.user_id == user.id, UsageLog.success == False)  # noqa: E712
+            session.query(func.count(ChatLog.id))
+            .filter(ChatLog.user_id == user.id, ChatLog.success == False)  # noqa: E712
             .scalar() or 0
         )
         return {
@@ -60,6 +64,41 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             "today_tokens": int(today_tokens),
             "failed": int(failed),
         }
+    finally:
+        session.close()
+
+
+@router.get("/monthly")
+async def usage_monthly(months: int = 12, user: User = Depends(get_current_user_from_jwt)):
+    """按自然月聚合最近 N 个月的调用数与 token 总量(仪表盘月视图)。
+    返回从本月往前 months 个月的连续序列, 无数据月份补零。"""
+    months = max(1, min(int(months), 24))
+    now = datetime.now()
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    for _ in range(months - 1):
+        start = (start - timedelta(days=1)).replace(day=1)
+    session = get_session()
+    try:
+        month_expr = func.strftime("%Y-%m", UsageLog.created_at)
+        rows = (
+            session.query(
+                month_expr.label("m"),
+                func.count(UsageLog.id),
+                func.coalesce(func.sum(UsageLog.total_tokens), 0),
+            )
+            .filter(UsageLog.user_id == user.id, UsageLog.created_at >= start)
+            .group_by(month_expr)
+            .all()
+        )
+        by_month = {r[0]: (int(r[1]), int(r[2])) for r in rows}
+        data = []
+        cur = start
+        for _ in range(months):
+            key = cur.strftime("%Y-%m")
+            calls, tokens = by_month.get(key, (0, 0))
+            data.append({"month": key, "calls": calls, "tokens": tokens})
+            cur = (cur + timedelta(days=32)).replace(day=1)
+        return {"data": data}
     finally:
         session.close()
 
