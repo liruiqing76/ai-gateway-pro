@@ -3,12 +3,14 @@
 # OpenAI 兼容接口: /v1/chat/completions /v1/models
 # ============================================================
 
+import asyncio
 import json
 import time
 import logging
 import urllib.parse
 
 import httpx
+from sqlalchemy import text
 
 def _safe_header(value) -> str:
     """HTTP 响应头只允许 latin-1; 渠道名/路由组名可能含中文(如"魔搭"),
@@ -35,7 +37,7 @@ from backend.core.orchestrate import (
 from backend.core.trace import TraceContext, save_trace
 from backend.core.chat_log import (
     extract_prompt_text, extract_completion_text, save_chat_log, StreamRecorder,
-    set_probe_mode, is_probe_mode,
+    set_probe_mode, is_probe_mode, estimate_tokens_from_text,
 )
 from backend.core.router_group import classify_model
 from backend.core import vision
@@ -80,30 +82,84 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
     trace.pipeline_mode = "auto-vision"
     trace.resolved_model = f"{requested_model}+vision"
 
-    async def _vision_forward(stage_body):
+    # 每个视觉候选的识别超时(快速失败换下一个), 不占用整个代理的 120s 预算
+    vision_timeout = max(15, min(45, settings.PROXY_TIMEOUT_SECONDS))
+
+    async def _vision_pass(stage_body) -> tuple[str | None, str, int]:
+        """完整扫一遍视觉候选, 返回 (识别文本, 最后错误, 实际尝试数)。
+        要求提取出非空文本才算成功, 空结果/异常自动换下一个候选。
+        attempted==0 表示候选全部在熔断冷却中, 调用方应直接降级, 不再空转。"""
+        last_err = "all vision candidates failed"
+        attempted = 0
         for prov, mdl in vision_cands:
+            key_cb = f"{prov.name}||{mdl}"
+            if circuit_breaker.is_open(key_cb):
+                continue  # 连续失败的视觉候选直接跳过, 不再每次请求都重试
             key_api = decrypted.get(prov.id, "")
             if not key_api and prov.api_key_encrypted:
                 continue
+            attempted += 1
             t0 = time.time()
-            resp, _err = await forward_non_stream(client, prov, key_api, mdl, stage_body)
-            if resp is not None and (resp.get("choices") or []):
+            try:
+                resp, _err = await forward_non_stream(client, prov, key_api, mdl,
+                                                      stage_body,
+                                                      timeout_seconds=vision_timeout)
+                # 个别上游模型 max_tokens 上限较低: 瘦身后若仍 400, 用更小的
+                # 输出上限重试一次, 避免把健康模型误判成连续失败而熔断
+                if resp is None and _err == "upstream 400":
+                    small = json.loads(json.dumps(stage_body))
+                    small["max_tokens"] = 512
+                    resp, _err = await forward_non_stream(client, prov, key_api, mdl,
+                                                          small,
+                                                          timeout_seconds=vision_timeout)
+            except Exception as e:  # 单个候选崩溃不拖垮整条管道
+                logger.warning("auto-vision candidate %s/%s crashed: %s",
+                               getattr(prov, "name", "?"), mdl, e)
+                continue
+            text_now = _extract_text(resp) if resp is not None else ""
+            if text_now and str(text_now).strip():
                 trace.add_stage(len(trace.stages_detail), prov.name, mdl,
                                 int((time.time() - t0) * 1000), True)
-                return resp
-        trace.add_stage(len(trace.stages_detail), "", "vision", 0, False,
-                        "all vision candidates failed")
-        return None
+                return str(text_now).strip(), "", attempted
+            # 200 但无可识别文本同样视为失败(与流式"空流记失败"一致), 计入熔断
+            if resp is not None:
+                circuit_breaker.record_fail(key_cb)
+            last_err = _err or "empty vision result"
+            logger.warning("auto-vision candidate %s/%s failed: %s",
+                           getattr(prov, "name", "?"), mdl, str(last_err)[:120])
+        return None, last_err, attempted
 
-    # ---- 阶段1: 视觉识别(原样带图请求) ----
-    vision_body = json.loads(json.dumps(body))
-    visor = await _vision_forward(vision_body)
-    if visor is None:
-        trace.mark_error("视觉识别失败")
-        trace.finish()
-        save_trace(trace)
-        return None, False, "vision_failed"
-    vision_text = _extract_text(visor)
+    # ---- 阶段1: 视觉识别(瘦身请求: 只带图+问题, 不带几十万字的历史) ----
+    # 直接原样转发完整对话会被 NVIDIA 之类的视觉模型 400:
+    # 上下文超限(Hermes 的 system 人设可达 8 万+ token)/ 历史并行 tool_calls,
+    # 再叠加 3 轮 × N 候选重试, 单请求能烧掉 50~130 秒。
+    vision_body = vision.build_vision_stage_body(body)
+
+    total_passes = max(1, int(settings.VISION_RECOGNIZE_PASSES))
+    visor_text, vision_err = None, ""
+    for attempt in range(1, total_passes + 1):
+        visor_text, vision_err, tried = await _vision_pass(vision_body)
+        if visor_text is not None:
+            break
+        logger.warning("auto-vision pass %d/%d failed: %s",
+                       attempt, total_passes, str(vision_err)[:150])
+        if tried == 0:
+            # 所有候选都在熔断冷却中: 本轮重试无意义, 直接降级文本-only
+            logger.warning("auto-vision all vision candidates circuit-open, degrade immediately")
+            break
+        if attempt < total_passes:
+            # 轮间短暂退避, 给上游限流/瞬时抖动留恢复窗口
+            await asyncio.sleep(min(5.0, 1.5 * attempt))
+    if visor_text is None:
+        # 终极兜底: 不再对客户端硬失败(502)。降级为告知文本模型"图片识别失败",
+        # 保证 Agent 对话链路永远有响应; trace 里留痕便于排查
+        logger.warning("auto-vision degraded to text-only after all retries: %s",
+                       str(vision_err)[:150])
+        trace.add_stage(len(trace.stages_detail), "", "(degraded)", 0, False,
+                        f"vision failed, degrade to text-only: {str(vision_err)[:150]}")
+        vision_text = ""
+    else:
+        vision_text = visor_text
 
     # ---- 阶段2: 文本模型(剥离图片 + 注入识别结果) ----
     text_body = vision.build_text_stage_body(body, vision_text)
@@ -121,6 +177,8 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
             done_sent = False
             try:
                 for prov, mdl in text_cands:
+                    if circuit_breaker.is_open(f"{prov.name}||{mdl}"):
+                        continue  # 连续失败的文本候选直接跳过
                     key_api = decrypted.get(prov.id, "")
                     if not key_api and prov.api_key_encrypted:
                         continue
@@ -148,6 +206,8 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
 
     # 非流式
     for prov, mdl in text_cands:
+        if circuit_breaker.is_open(f"{prov.name}||{mdl}"):
+            continue  # 连续失败的文本候选直接跳过
         key_api = decrypted.get(prov.id, "")
         if not key_api and prov.api_key_encrypted:
             continue
@@ -176,7 +236,7 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
 
 # ── 用量明细与额度累计 ──
 def _log_usage_and_quota(*, user, provider_name, model_name, pt, ct, tag="usage"):
-    """成功调用后写 UsageLog 并累计当日额度。
+    """成功调用后写 UsageLog 并累计当日额度(原子+1, 并发安全)。
     速度探测请求跳过: 不污染调用量/token 统计, 也不占用每日配额
     (后台每 2h 自动测速若计入会白白消耗用户额度)。"""
     if is_probe_mode():
@@ -193,13 +253,46 @@ def _log_usage_and_quota(*, user, provider_name, model_name, pt, ct, tag="usage"
                 total_tokens=pt + ct,
                 success=True,
             ))
-            user.quota_used_today = (user.quota_used_today or 0) + 1
-            session.merge(user)
+            # 原子自增: 旧实现是读 ORM user 再 merge 写回, 并发请求会互相覆盖丢计数
+            # (实测当日调用数百条, quota_used_today 却只有个位数, 仪表盘"今日调用"严重偏低)
+            session.execute(
+                text(
+                    "UPDATE users SET quota_used_today = COALESCE(quota_used_today, 0) + 1 "
+                    "WHERE id = :uid"
+                ),
+                {"uid": user.id},
+            )
             session.commit()
         finally:
             session.close()
     except Exception:
         logger.exception(f"{tag} usage log failed")
+
+
+def _stream_usage_callback(user, provider_name, model_name, tag="stream"):
+    """流式请求结束后的用量统计回调(给 StreamRecorder.record(on_done=...) 用)。
+
+    之前流式路径只走 StreamRecorder 写聊天记录, 从不计数: 结果就是流式调用
+    (通常占 90%+)在仪表盘的调用数/token 里全部消失。这里在流式正常结束时
+    补记 UsageLog 与当日配额, 与 _log_usage_and_quota 同一套原子逻辑。
+    """
+    def _cb(rec, pt, ct, success):
+        try:
+            if not success:
+                return  # 客户端断开/上游异常不算成功调用
+            _log_usage_and_quota(
+                user=user, provider_name=provider_name,
+                model_name=model_name, pt=pt, ct=ct, tag=tag,
+            )
+        except Exception:
+            logger.exception(f"{tag} stream usage callback failed")
+    return _cb
+
+
+def _fallback_pt_ct(prompt_text: str, completion_text: str):
+    """上游没回传 usage 时的兜底估算(CJK 感知, 贴近官方计费口径)"""
+    return (estimate_tokens_from_text(prompt_text or ""),
+            estimate_tokens_from_text(completion_text or ""))
 
 
 # 全局 httpx 客户端(复用连接池)
@@ -384,7 +477,13 @@ async def proxy_chat(
                     start_time=trace._start_time,
                 )
                 return StreamingResponse(
-                    rec.record(_safe_orchestrate_gen(orch_gen)),
+                    rec.record(
+                        _safe_orchestrate_gen(orch_gen),
+                        on_done=_stream_usage_callback(
+                            user, "orchestrate", requested_model or "",
+                            tag="orchestrate-stream",
+                        ),
+                    ),
                     media_type="text/event-stream",
                     headers={"X-Pipeline": _safe_header(requested_model)},
                 )
@@ -424,6 +523,9 @@ async def proxy_chat(
             usage = orch_result.get("usage") or {}
             pt = usage.get("prompt_tokens", 0) or 0
             ct = usage.get("completion_tokens", 0) or 0
+            if not pt and not ct:
+                # 上游未回传 usage: 按内容估算兜底
+                pt, ct = _fallback_pt_ct(prompt_text, extract_completion_text(orch_result))
             trace.mark_tokens(pt, ct)
             trace.mark_selected("orchestrate", requested_model, f"pipeline non-stream ok")
             trace.finish()
@@ -484,12 +586,22 @@ async def proxy_chat(
                     start_time=trace._start_time,
                 )
                 return StreamingResponse(
-                    rec.record(res), media_type="text/event-stream",
+                    rec.record(
+                        res,
+                        on_done=_stream_usage_callback(
+                            user, "auto-vision", requested_model or "",
+                            tag="auto-vision-stream",
+                        ),
+                    ),
+                    media_type="text/event-stream",
                     headers={"X-Pipeline": "auto-vision"},
                 )
             # 非流式: 直接记录全文
             pt = int(((res.get("usage") or {}).get("prompt_tokens", 0)) or 0)
             ct_ = int(((res.get("usage") or {}).get("completion_tokens", 0)) or 0)
+            if not pt and not ct_:
+                # 上游未回传 usage: 按内容估算兜底
+                pt, ct_ = _fallback_pt_ct(prompt_text, extract_completion_text(res))
             save_chat_log(
                 user_id=user.id, original_model=requested_model or "",
                 provider_name="auto-vision", model_name=requested_model or "",
@@ -609,7 +721,12 @@ async def proxy_chat(
                     start_time=trace._start_time,
                 )
                 return StreamingResponse(
-                    rec.record(_stream_with_fallback(resp, remaining)),
+                    rec.record(
+                        _stream_with_fallback(resp, remaining),
+                        on_done=_stream_usage_callback(
+                            user, provider.name, model, tag="stream",
+                        ),
+                    ),
                     media_type="text/event-stream",
                     headers={"X-Provider": _safe_header(provider.name), "X-Model": _safe_header(model)},
                 )
@@ -633,6 +750,9 @@ async def proxy_chat(
             usage = resp.get("usage") or {}
             pt = usage.get("prompt_tokens", 0) or 0
             ct = usage.get("completion_tokens", 0) or 0
+            if not pt and not ct:
+                # 上游未回传 usage: 按内容估算兜底
+                pt, ct = _fallback_pt_ct(prompt_text, extract_completion_text(resp))
 
             trace.mark_selected(provider.name, model, f"non-stream ok, cb={'hit' if cb_open else 'clean'}")
             trace.mark_tokens(pt, ct)

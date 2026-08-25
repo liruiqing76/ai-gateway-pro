@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_POLLS: int = 10
     # 代理转发超时(秒) — 每个上游模型尝试的最长时间
     PROXY_TIMEOUT_SECONDS: int = 120
+    # 流式转发读超时(秒): 等首字节/相邻数据块超过该值即放弃当前候选,
+    # 自动切换组内下一个模型("卡住30秒就换模型"), 防止单上游拖死整个请求。
+    PROXY_STREAM_READ_TIMEOUT: int = 30
     # 流式传输 per-chunk 超时(秒) — 上游超过此时间无数据则判定断流
     STREAMING_TIMEOUT_SECONDS: int = 300
 
@@ -72,6 +75,14 @@ class Settings(BaseSettings):
     ZEN_SYNC_HOURS: int = 6
     ZEN_HEALTH_CHECK_MINUTES: int = 60
     ZEN_PROBE_FAIL_LIMIT: int = 2
+
+    # ---- 自动识图(auto-vision) ----
+    # 视觉识别阶段对候选渠道的全量扫描轮数(轮间短暂退避);
+    # 全部失败后仍会降级为文本兜底, 不会对客户端硬失败。
+    VISION_RECOGNIZE_PASSES: int = 3
+    # 视觉子调用的输出上限(token): 识别结果通常很短, 钳制后不会因
+    # completion 侧超限被 NVIDIA 等上游 400(Agent 客户端常带 65536)。
+    VISION_MAX_OUTPUT_TOKENS: int = 2048
 
     # ---- CORS ----
     CORS_ORIGINS: list = [

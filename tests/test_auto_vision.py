@@ -5,6 +5,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from backend.core import vision
+from backend.config import settings
 
 
 def test_detect_images_pure_text():
@@ -85,3 +86,78 @@ def test_build_text_stage_body_injects_recognition():
     assert "这是什么?" in c
     # 图片部分已被剥离
     assert "image_url" not in c.lower()
+
+
+def test_build_vision_stage_body_slims_history():
+    """超大 system/history 必须被丢弃, 只留最后带图消息 + 最后 user 提问"""
+    body = {
+        "model": "high_quality",
+        "max_tokens": 65536,
+        "stream": True,
+        "tools": [{"type": "function", "function": {"name": "f"}}],
+        "tool_choice": "auto",
+        "messages": [
+            {"role": "system", "content": "x" * 200_000},  # Agent 人设巨块
+            {"role": "user", "content": "旧消息, 与图无关"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "1"}, {"id": "2"},  # 历史并行 tool_calls
+            ]},
+            {"role": "user", "content": [
+                {"type": "text", "text": "看下这张图"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+            ]},
+            {"role": "user", "content": "图里是什么?"},
+        ],
+    }
+    out = vision.build_vision_stage_body(body)
+    assert out["model"] == "high_quality"
+    # 只保留最后带图消息 + 最后 user 提问, 系统/历史全丢
+    assert len(out["messages"]) == 2
+    texts = [m["content"] for m in out["messages"]]
+    assert any(isinstance(c, list) and any("image_url" in p for p in c) for c in texts)
+    assert "图里是什么?" in [c if isinstance(c, str) else "" for c in texts]
+    assert "x" * 100 not in str(out["messages"])
+    # 工具字段被剥掉, stream 强制关掉, max_tokens 钳制
+    assert "tools" not in out and "tool_choice" not in out
+    assert out["stream"] is False
+    assert out["max_tokens"] == settings.VISION_MAX_OUTPUT_TOKENS
+    # 任何残留消息都不允许带 tool_calls(视觉模型单 tool-call 限制)
+    for m in out["messages"]:
+        assert "tool_calls" not in m
+
+
+def test_build_vision_stage_body_keeps_image_message_when_last():
+    """带图消息本身就是最后一条 user 消息时只保留一条"""
+    body = {"messages": [
+        {"role": "system", "content": "人设" * 1000},
+        {"role": "user", "content": [
+            {"type": "text", "text": "这是什么?"},
+            {"type": "image_url", "image_url": {"url": "https://x/y.png"}},
+        ]},
+    ]}
+    out = vision.build_vision_stage_body(body)
+    assert len(out["messages"]) == 1
+    c = out["messages"][0]["content"]
+    assert any("image_url" in p for p in c)
+    assert out["max_tokens"] == settings.VISION_MAX_OUTPUT_TOKENS
+
+
+def test_build_vision_stage_body_does_not_truncate_inline_base64():
+    """整段 base64 图片字符串不能被截断"""
+    b64 = "data:image/png;base64," + "A" * 100_000
+    body = {"messages": [{"role": "user", "content": b64}]}
+    out = vision.build_vision_stage_body(body)
+    assert out["messages"][0]["content"] == b64
+
+
+def test_build_vision_stage_body_limits_text_blob():
+    """同一消息里夹带的巨型文本会被限长, 图片部分保留"""
+    body = {"messages": [{"role": "user", "content": [
+        {"type": "text", "text": "哈" * 50_000},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+    ]}]}
+    out = vision.build_vision_stage_body(body)
+    parts = out["messages"][0]["content"]
+    text_part = next(p for p in parts if p.get("type") == "text")
+    assert len(text_part["text"]) < 5000
+    assert any("image_url" in p for p in parts)
