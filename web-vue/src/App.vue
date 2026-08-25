@@ -5,7 +5,7 @@
     <div class="app-container" v-else>
       <aside class="sidebar" :class="{ collapsed: isCollapse }">
         <div class="sidebar-logo">
-          <el-icon class="sidebar-logo-icon" :size="24"><Lightning /></el-icon>
+          <img class="sidebar-logo-icon" src="/frenchie-logo.png" alt="AI 网关" />
           <span class="sidebar-logo-text" v-if="!isCollapse">{{ $t('app.title') }}</span>
         </div>
         <nav class="sidebar-nav">
@@ -144,7 +144,7 @@ function changeLocale(lang) {
 }
 
 watch(locale, () => {
-  document.title = `⚡ ${t('app.title')}`
+  document.title = `${t('app.title')}`
 })
 
 onMounted(() => {
@@ -166,6 +166,7 @@ function onLoggedIn() {
 
 function logout() {
   localStorage.removeItem('gw_token')
+  localStorage.removeItem('gw_refresh_token')
   localStorage.removeItem('gw_api_key')
   localStorage.removeItem('gw_email')
   localStorage.removeItem('gw_username')

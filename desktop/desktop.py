@@ -425,7 +425,16 @@ def main():
     window.events.closing += _make_closing_handler(window)
     # 显式使用 Edge WebView2 引擎(已确认运行时已安装, GUIType 值为 'edgechromium')。
     # 不显式指定时 pywebview 在某些环境会自动选成 mshtml(IE)导致 JS 失效/窗口空白。
-    webview.start(gui='edgechromium', debug=False)
+    # private_mode=False + storage_path: pywebview 默认隐私模式每次重启都清空
+    # localStorage, 登录态(JWT)随之丢失 -> 每次重开/重新构建都要重新输密码。
+    # 持久化到 exe/项目旁的 data/webview_profile 后登录态跨重启保留。
+    webview_profile = DATA_DIR / "data" / "webview_profile"
+    webview_profile.mkdir(parents=True, exist_ok=True)
+    webview.start(
+        gui='edgechromium', debug=False,
+        private_mode=False,
+        storage_path=str(webview_profile),
+    )
 
 
 if __name__ == "__main__":

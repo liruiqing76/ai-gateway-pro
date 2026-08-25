@@ -128,6 +128,8 @@ async function submit() {
       : { email: form.value.email, username: form.value.username, password: form.value.password }
     const resp = await api.post(url, body)
     localStorage.setItem('gw_token', resp.data.access_token)
+    // 7 天刷新令牌: access token(24h)过期后由 api 拦截器静默换新, 免重复登录
+    localStorage.setItem('gw_refresh_token', resp.data.refresh_token || '')
     localStorage.setItem('gw_api_key', resp.data.api_key || '')
     localStorage.setItem('gw_username', resp.data.user?.username || form.value.email)
     localStorage.setItem('gw_email', form.value.email)
