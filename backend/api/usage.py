@@ -79,6 +79,7 @@ async def usage_monthly(months: int = 12, user: User = Depends(get_current_user_
         start = (start - timedelta(days=1)).replace(day=1)
     session = get_session()
     try:
+        from backend.models import ChatLog
         month_expr = func.strftime("%Y-%m", UsageLog.created_at)
         rows = (
             session.query(
@@ -91,12 +92,24 @@ async def usage_monthly(months: int = 12, user: User = Depends(get_current_user_
             .all()
         )
         by_month = {r[0]: (int(r[1]), int(r[2])) for r in rows}
+        chat_expr = func.strftime("%Y-%m", ChatLog.created_at)
+        char_rows = (
+            session.query(
+                chat_expr.label("m"),
+                func.coalesce(func.sum(ChatLog.total_chars), 0),
+            )
+            .filter(ChatLog.user_id == user.id, ChatLog.created_at >= start)
+            .group_by(chat_expr)
+            .all()
+        )
+        chars_by_month = {r[0]: int(r[1] or 0) for r in char_rows}
         data = []
         cur = start
         for _ in range(months):
             key = cur.strftime("%Y-%m")
             calls, tokens = by_month.get(key, (0, 0))
-            data.append({"month": key, "calls": calls, "tokens": tokens})
+            data.append({"month": key, "calls": calls, "tokens": tokens,
+                         "chars": chars_by_month.get(key, 0)})
             cur = (cur + timedelta(days=32)).replace(day=1)
         return {"data": data}
     finally:
@@ -106,12 +119,15 @@ async def usage_monthly(months: int = 12, user: User = Depends(get_current_user_
 @router.get("/daily")
 async def usage_daily(days: int = 30, user: User = Depends(get_current_user_from_jwt)):
     """按自然日聚合最近 N 天的调用数与 token 总量(用于仪表盘日历/柱状趋势)。
-    返回从今天往前 days 天的连续序列, 无数据的日子补零。"""
+    返回从今天往前 days 天的连续序列, 无数据的日子补零。
+    chars 来自 chat_logs(与聊天记录菜单同口径): 字符与 token 是两种单位,
+    代码/英文场景字符可达 token 的 5~6 倍, 仪表盘同时给出避免跨页误读。"""
     days = max(7, min(int(days), 90))
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     start = today_start - timedelta(days=days - 1)
     session = get_session()
     try:
+        from backend.models import ChatLog
         rows = (
             session.query(
                 func.date(UsageLog.created_at).label("d"),
@@ -123,11 +139,22 @@ async def usage_daily(days: int = 30, user: User = Depends(get_current_user_from
             .all()
         )
         by_date = {str(r[0]): (int(r[1]), int(r[2])) for r in rows}
+        char_rows = (
+            session.query(
+                func.date(ChatLog.created_at).label("d"),
+                func.coalesce(func.sum(ChatLog.total_chars), 0),
+            )
+            .filter(ChatLog.user_id == user.id, ChatLog.created_at >= start)
+            .group_by(func.date(ChatLog.created_at))
+            .all()
+        )
+        chars_by_date = {str(r[0]): int(r[1] or 0) for r in char_rows}
         data = []
         for i in range(days):
             d = (start + timedelta(days=i)).strftime("%Y-%m-%d")
             calls, tokens = by_date.get(d, (0, 0))
-            data.append({"date": d, "calls": calls, "tokens": tokens})
+            data.append({"date": d, "calls": calls, "tokens": tokens,
+                         "chars": chars_by_date.get(d, 0)})
         return {"data": data}
     finally:
         session.close()

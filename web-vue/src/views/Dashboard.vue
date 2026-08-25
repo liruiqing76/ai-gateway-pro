@@ -58,8 +58,7 @@
         <h3>{{ $t('dashboard.tokenTrend') }}</h3>
         <div style="display:flex;align-items:center;gap:12px">
           <span v-if="activeTrendList.length" class="usage-meta">
-            {{ trendMode === 'day' ? $t('dashboard.tokenTrendMeta', { days: activeTrendList.length })
-                              : $t('dashboard.tokenTrendMetaMonth', { months: activeTrendList.length }) }}
+            {{ $t('dashboard.trendTotals', { tokens: trendSum.tokens.toLocaleString(), chars: trendSum.chars.toLocaleString() }) }}
           </span>
           <el-radio-group v-model="trendMode" size="small" @change="onTrendModeChange">
             <el-radio-button value="day">{{ $t('dashboard.viewDaily') }}</el-radio-button>
@@ -125,9 +124,14 @@ const activeTrendList = computed(() =>
   trendMode.value === 'month' ? monthlyList.value : dailyList.value)
 const trendMax = computed(() =>
   Math.max(...activeTrendList.value.map(d => d.tokens || 0), 0))
-// 30天合计仅在按日视图下作为"累计"口径; 按月视图下改为12个月总和
-const totalTokens = computed(() =>
-  activeTrendList.value.reduce((s, d) => s + (d.tokens || 0), 0))
+// 窗口合计(Token+字符双口径): 字符来自聊天记录同源数据(chat_logs),
+// 代码/英文场景字符可达 token 的 5~6 倍, 两数并列避免跨页对比误读
+const trendSum = computed(() => ({
+  tokens: activeTrendList.value.reduce((s, d) => s + (d.tokens || 0), 0),
+  chars: activeTrendList.value.reduce((s, d) => s + (d.chars || 0), 0),
+}))
+// 今日Token卡片的"累计"口径跟随趋势视图(按日=近30天, 按月=近12个月)
+const totalTokens = computed(() => trendSum.value.tokens)
 
 function trendTitle(d) {
   const label = d.date || d.month

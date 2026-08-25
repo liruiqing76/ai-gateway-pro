@@ -113,6 +113,7 @@
     "tokenTrend": "Token Usage Trend",
     "tokenTrendMeta": "Last {days} days",
     "tokenTrendMetaMonth": "Last {months} months",
+    "trendTotals": "Total {tokens} tokens · {chars} chars",
     "viewDaily": "Daily",
     "viewMonthly": "Monthly",
     "trendCalls": "{n} calls",

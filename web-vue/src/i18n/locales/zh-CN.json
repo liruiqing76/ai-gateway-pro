@@ -113,6 +113,7 @@
     "tokenTrend": "Token 用量趋势",
     "tokenTrendMeta": "近 {days} 天",
     "tokenTrendMetaMonth": "近 {months} 个月",
+    "trendTotals": "合计 {tokens} Token · {chars} 字符",
     "viewDaily": "按日",
     "viewMonthly": "按月",
     "trendCalls": "{n} 次调用",
