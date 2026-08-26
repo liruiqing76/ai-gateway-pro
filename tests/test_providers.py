@@ -198,7 +198,7 @@ class TestFetchModels:
 
     def test_fetch_upstream_models_success(self, auth_headers, monkeypatch):
         import backend.api.providers as pm
-        async def fake_get(base_url, api_key):
+        async def fake_get(base_url, api_key, free_only=False):
             return ["b-model", "a-model"]
         monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
 
@@ -214,7 +214,7 @@ class TestFetchModels:
         import backend.api.providers as pm
         from fastapi import HTTPException
 
-        async def fail_get(base_url, api_key):
+        async def fail_get(base_url, api_key, free_only=False):
             raise HTTPException(status_code=502, detail="拉取模型失败: HTTP 401")
         monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
 
@@ -226,7 +226,7 @@ class TestFetchModels:
 
     def test_create_provider_auto_fetch_models(self, auth_headers, monkeypatch):
         import backend.api.providers as pm
-        async def fake_get(base_url, api_key):
+        async def fake_get(base_url, api_key, free_only=False):
             return ["fetched-model-1"]
         monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
 
@@ -245,7 +245,7 @@ class TestFetchModels:
         import backend.api.providers as pm
         from fastapi import HTTPException
 
-        async def fail_get(base_url, api_key):
+        async def fail_get(base_url, api_key, free_only=False):
             raise HTTPException(status_code=502, detail="拉取模型失败")
         monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
 
@@ -259,7 +259,7 @@ class TestFetchModels:
     def test_create_provider_auto_fetch_generates_routers(self, auth_headers, monkeypatch):
         """创建渠道后自动重建默认路由组(含中文组名 quick)"""
         import backend.api.providers as pm
-        async def fake_get(base_url, api_key):
+        async def fake_get(base_url, api_key, free_only=False):
             return ["qwen-8b-fp8", "glm-5.2"]
         monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
 
@@ -287,7 +287,7 @@ class TestFetchModels:
         }, headers=auth_headers)
         pid = resp.json()["id"]
 
-        async def fake_get(base_url, api_key):
+        async def fake_get(base_url, api_key, free_only=False):
             return ["new-model-1", "new-model-2"]
         monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
 
@@ -301,7 +301,7 @@ class TestFetchModels:
 
     def test_refresh_models_missing_provider_404(self, auth_headers, monkeypatch):
         import backend.api.providers as pm
-        async def fake_get(base_url, api_key):
+        async def fake_get(base_url, api_key, free_only=False):
             return []
         monkeypatch.setattr(pm, "fetch_upstream_models", fake_get)
 
@@ -465,7 +465,7 @@ class TestFetchUpstreamErrors:
         """创建渠道时自动拉取失败 → 渠道仍创建成功(空模型列表)"""
         import backend.api.providers as pm
 
-        async def fail_get(base_url, api_key):
+        async def fail_get(base_url, api_key, free_only=False):
             raise HTTPException(status_code=502, detail="拉取模型失败")
         monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
 
@@ -490,7 +490,7 @@ class TestFetchUpstreamErrors:
         ]), encoding="utf-8")
         monkeypatch.setattr(pm, "TEMPLATES_FILE", tmp_tpl)
 
-        async def fail_get(base_url, api_key):
+        async def fail_get(base_url, api_key, free_only=False):
             raise HTTPException(status_code=502, detail="拉取模型失败: 超时")
         monkeypatch.setattr(pm, "fetch_upstream_models", fail_get)
 

@@ -55,11 +55,43 @@ def load_templates() -> list[dict]:
 # ============================================================
 # 上游模型拉取 + 自动分组(核心: 加渠道后模型自动显示/分组)
 # ============================================================
-async def fetch_upstream_models(base_url: str, api_key: str) -> list[str]:
+def _is_free_item(item: dict) -> bool:
+    """免费判定: 上游带 pricing 字段时, 全 0 或 id 带 free → 免费。
+
+    无 pricing 信息的平台(NVIDIA 等)无法判定, 保守保留(当作免费),
+    避免误伤现有渠道。pricing 值为字符串数字, 需转 float 比较。
+    """
+    mid = (item.get("id") or "").strip().lower()
+    tail = mid.split("/")[-1]
+    if ":free" in mid or tail.endswith("-free") or "-free-" in mid \
+            or tail.split("-")[-1] == "free":
+        return True
+    pricing = item.get("pricing")
+    if isinstance(pricing, dict):
+        vals = []
+        for v in pricing.values():
+            if isinstance(v, bool):
+                vals.append(float(v))
+            elif isinstance(v, (int, float)):
+                vals.append(float(v))
+            elif isinstance(v, str):
+                try:
+                    vals.append(float(v))
+                except ValueError:
+                    continue
+        if vals:
+            return all(v == 0 for v in vals)
+    return True  # 无 pricing 信息 → 保守保留
+
+
+async def fetch_upstream_models(base_url: str, api_key: str,
+                                free_only: bool = False) -> list[str]:
     """
     请求上游 GET {base_url}/models 拉取模型列表。
     兼容两种 base_url 形态: 带 /v1 结尾 和 不带(自动补 /v1/models)。
-    返回排序后的模型 ID 列表, 失败抛异常。
+    free_only=True 时只保留免费模型(带 pricing 的上游按定价过滤,
+    Nous Portal 等平台 372 个模型会收敛到 7 个免费 SKU; 无 pricing
+    的 NVIDIA 等全量保留)。失败抛异常。
     """
     import httpx
 
@@ -74,7 +106,8 @@ async def fetch_upstream_models(base_url: str, api_key: str) -> list[str]:
     if api_key and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
     last_err = ""
-    async with httpx.AsyncClient(timeout=20) as client:
+    # 模型清单不小的平台(Nous 660KB / NVIDIA 等), 20s 会读超时, 给足 60s
+    async with httpx.AsyncClient(timeout=60) as client:
         for url in candidates:
             try:
                 resp = await client.get(url, headers=headers)
@@ -86,16 +119,16 @@ async def fetch_upstream_models(base_url: str, api_key: str) -> list[str]:
                 if not isinstance(items, list):
                     last_err = "响应格式异常"
                     continue
-                ids = sorted({
-                    (it.get("id") or "").strip()
-                    for it in items
-                    if isinstance(it, dict) and it.get("id")
-                })
+                items = [it for it in items
+                         if isinstance(it, dict) and it.get("id")]
+                if free_only:
+                    items = [it for it in items if _is_free_item(it)]
+                ids = sorted({(it.get("id") or "").strip() for it in items})
                 if ids:
                     return ids
                 last_err = "上游返回空模型列表"
             except Exception as e:
-                last_err = str(e)[:150]
+                last_err = str(e)[:150] or "网络中断或超时"
     raise HTTPException(status_code=502, detail=f"拉取模型失败: {last_err}")
 
 
@@ -253,7 +286,8 @@ async def create_provider(
         fetched = False
         if not models and data.auto_fetch:
             try:
-                models = await fetch_upstream_models(data.base_url, data.api_key)
+                models = await fetch_upstream_models(data.base_url, data.api_key,
+                                                      free_only=data.free_only)
                 fetched = True
             except HTTPException as e:
                 # 拉取失败不阻塞渠道创建, 仅提示
@@ -320,11 +354,14 @@ async def apply_template(
     if not tpl:
         raise HTTPException(status_code=404, detail="模板不存在")
 
-    # 模板模型为空时, 自动从上游拉取
+    # 模板模型为空时, 自动从上游拉取(按模板 free_only 过滤)
     models = tpl.get("models", [])
     if not models:
         try:
-            models = await fetch_upstream_models(tpl["base_url"], data.api_key)
+            models = await fetch_upstream_models(
+                tpl["base_url"], data.api_key,
+                free_only=tpl.get("free_only", True),
+            )
         except HTTPException as e:
             logger.warning("template fetch models failed for %s: %s", tpl["name"], e.detail)
             models = []
@@ -380,6 +417,9 @@ async def apply_template(
 class FetchModelsIn(BaseModel):
     base_url: str
     api_key: str
+    # 默认只拉免费模型: 上游带 pricing 时按定价过滤(Nous Portal 372 个
+    # 会收敛到 7 个免费 SKU), 无 pricing 的平台(NVIDIA 等)全量保留。
+    free_only: bool = True
 
 
 @router.post("/fetch-models")
@@ -388,7 +428,8 @@ async def fetch_models(
     user: User = Depends(get_current_user_from_jwt),
 ):
     """用表单中的 URL+Key 实时拉取上游模型列表(不落库)"""
-    models = await fetch_upstream_models(data.base_url, data.api_key)
+    models = await fetch_upstream_models(data.base_url, data.api_key,
+                                         free_only=data.free_only)
     return {"ok": True, "models": models, "count": len(models)}
 
 
@@ -430,7 +471,8 @@ async def refresh_provider_models(
             # 免 key 匿名渠道(如 opencode zen)存的是空串/未加密数据:
             # 按无密钥渠道拉取, 而不是让解密异常把整个接口打成 500
             api_key = ""
-        models = await fetch_upstream_models(p.base_url, api_key)
+        models = await fetch_upstream_models(p.base_url, api_key,
+                                             free_only=p.free_only)
         models = filter_chat_models(models)  # 过滤非对话模型, 防止渠道被全量污染
         p.models = models  # 过滤结果必须落库(此前漏赋值导致刷新按钮假成功)
         session.commit()
