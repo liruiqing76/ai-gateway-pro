@@ -429,23 +429,52 @@ def create_tables():
 
 
 def _migrate_columns(engine):
-    """为已存在的表补充后续新增的列(SQLite ALTER TABLE ADD COLUMN)"""
+    """为已存在的表补充/重命名列 (SQLite ALTER TABLE ADD COLUMN + RENAME COLUMN)"""
     import sqlalchemy as sa
     from sqlalchemy import inspect
-    # 需要确保存在的 列 -> 类型定义(用于 DDL)
-    migrations = {
-        "users": {
-            "machine_code": "VARCHAR(128)",
-            "license_locked": "BOOLEAN",
-        },
-        "request_traces": {
-            "request_type": "VARCHAR(16)",
-        },
-    }
+    import logging
+    log = logging.getLogger("gateway")
+
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
-        for table, cols in migrations.items():
+
+        # ── 1. orders 表列重命名（旧版用 tier/amount，新版用 plan_name/amount_cents） ──
+        if "orders" in tables:
+            existing = {c["name"] for c in inspector.get_columns("orders")}
+            renames = {
+                "tier": "plan_name",
+                "amount": "amount_cents",
+            }
+            with engine.begin() as conn:
+                for old, new in renames.items():
+                    if old in existing and new not in existing:
+                        conn.execute(sa.text(f'ALTER TABLE orders RENAME COLUMN {old} TO {new}'))
+                        log.info("DB migration: orders.%s → %s", old, new)
+                # 重命名后刷新列信息
+                existing = {c["name"] for c in inspector.get_columns("orders")}
+                # 新增缺失列
+                new_cols = {
+                    "amount_paid": "INTEGER DEFAULT 0",
+                    "payment_ref": "VARCHAR(128) DEFAULT ''",
+                    "remark": "VARCHAR(512) DEFAULT ''",
+                }
+                for col, coltype in new_cols.items():
+                    if col not in existing:
+                        conn.execute(sa.text(f'ALTER TABLE orders ADD COLUMN {col} {coltype}'))
+                        log.info("DB migration: orders ADD COLUMN %s", col)
+
+        # ── 2. 补充列（简单 ADD COLUMN） ──
+        add_cols = {
+            "users": {
+                "machine_code": "VARCHAR(128)",
+                "license_locked": "BOOLEAN",
+            },
+            "request_traces": {
+                "request_type": "VARCHAR(16)",
+            },
+        }
+        for table, cols in add_cols.items():
             if table not in tables:
                 continue
             existing = {c["name"] for c in inspector.get_columns(table)}
@@ -455,10 +484,10 @@ def _migrate_columns(engine):
                         conn.execute(sa.text(
                             f'ALTER TABLE {table} ADD COLUMN {col} {coltype}'
                         ))
+                        log.info("DB migration: %s ADD COLUMN %s", table, col)
+
     except Exception:
-        # 迁移失败不影响启动
-        import logging
-        logging.getLogger("gateway").exception("DB column migration failed")
+        log.exception("DB column migration failed")
 
 
 def get_session():

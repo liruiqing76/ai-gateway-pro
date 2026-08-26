@@ -18,6 +18,9 @@ build/
 dist/
 *.spec.bak
 
+# Cython 混淆构建 staging 目录(build_exe.py 生成, 不入库)
+build_src/
+
 # 环境与密钥
 .env
 .env.*

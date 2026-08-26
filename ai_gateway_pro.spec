@@ -7,6 +7,9 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dynamic_libs
 
 BASE = Path(os.path.abspath('.'))
+# 混淆构建时 build_exe.py 设 GW_SRC_ROOT 指向 staging(build_src/)，其中核心
+# 模块已编译为 .pyd、对应 .py 已删除; 不设则等于 BASE(明文源码, 供 dev 构建)。
+SRC_ROOT = Path(os.getenv("GW_SRC_ROOT") or os.path.abspath('.'))
 WEB_DIR = BASE / 'web'
 
 
@@ -18,12 +21,15 @@ def collect_source_tree(src, dst):
                                            'desktop/logs/', 'logs/'))
     out = []
     for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache')]
+        dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache',
+                                               'build', 'cython_build')]
         for f in files:
             rel = (Path(root) / f).relative_to(src).as_posix()
             if rel.startswith(exclude_rel_prefixes):
                 continue
-            if f.endswith(('.pyc', '.log')) or f.endswith('.db') or '.db.bak' in f:
+            # .pyd 不排除(混淆构建靠它交付编译模块); .c/.obj 等编译中间产物排除
+            if f.endswith(('.pyc', '.log', '.c', '.obj', '.exp', '.lib', '.o')) \
+                    or f.endswith('.db') or '.db.bak' in f:
                 continue
             parent = os.path.dirname(rel)
             out.append((str(Path(src) / rel), str(Path(dst) / parent) if parent else dst))
@@ -57,13 +63,13 @@ hiddenimports += collect_submodules('sqlalchemy')
 binaries += collect_dynamic_libs('sqlalchemy')
 
 a = Analysis(
-    ['desktop/desktop.py'],
-    pathex=[str(BASE)],
+    [str(SRC_ROOT / 'desktop' / 'desktop.py')],
+    pathex=[str(SRC_ROOT)],
     binaries=binaries,
     datas=datas + [
         (str(WEB_DIR), 'web'),
-    ] + collect_source_tree(BASE / 'backend', 'backend') + collect_source_tree(
-        BASE / 'desktop', 'desktop'),
+    ] + collect_source_tree(SRC_ROOT / 'backend', 'backend') + collect_source_tree(
+        SRC_ROOT / 'desktop', 'desktop'),
     hiddenimports=hiddenimports + [
         'pythoncom',
         'pywintypes',
