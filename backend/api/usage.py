@@ -6,7 +6,7 @@
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 
 from backend.auth.middleware import get_current_user_from_jwt
@@ -34,7 +34,7 @@ def _serialize(row: UsageLog) -> dict:
 
 @router.get("/summary")
 async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
-    """聚合统计: 总调用数 / 今日调用数 / 今日 token / 失败数。
+    """聚合统计: 总调用数 / 总 token / 今日调用数 / 今日 token / 失败数。
 
     失败数从 chat_logs 统计(与"聊天记录"菜单同口径): usage_logs 只记成功
     调用, 旧实现这里恒为 0, 用户对比两个菜单时永远"对不上"。"""
@@ -53,6 +53,11 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             .filter(UsageLog.user_id == user.id, UsageLog.created_at >= today_start)
             .scalar() or 0
         )
+        total_tokens = (
+            session.query(func.coalesce(func.sum(UsageLog.total_tokens), 0))
+            .filter(UsageLog.user_id == user.id)
+            .scalar() or 0
+        )
         failed = (
             session.query(func.count(ChatLog.id))
             .filter(ChatLog.user_id == user.id, ChatLog.success == False)  # noqa: E712
@@ -62,6 +67,7 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             "total": int(total),
             "today": int(today),
             "today_tokens": int(today_tokens),
+            "total_tokens": int(total_tokens),
             "failed": int(failed),
         }
     finally:
@@ -117,24 +123,44 @@ async def usage_monthly(months: int = 12, user: User = Depends(get_current_user_
 
 
 @router.get("/daily")
-async def usage_daily(days: int = 30, user: User = Depends(get_current_user_from_jwt)):
-    """按自然日聚合最近 N 天的调用数与 token 总量(用于仪表盘日历/柱状趋势)。
-    返回从今天往前 days 天的连续序列, 无数据的日子补零。
-    chars 来自 chat_logs(与聊天记录菜单同口径): 字符与 token 是两种单位,
-    代码/英文场景字符可达 token 的 5~6 倍, 仪表盘同时给出避免跨页误读。"""
-    days = max(7, min(int(days), 90))
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    start = today_start - timedelta(days=days - 1)
+async def usage_daily(days: int = 30, month: str | None = None,
+                      user: User = Depends(get_current_user_from_jwt)):
+    """按自然日聚合调用数与 token 总量。两种口径:
+    - 默认: 最近 days 天(从今天往前, 仪表盘趋势)
+    - month="YYYY-MM": 指定自然月的每一天(日历翻页), 与 days 互斥
+    返回连续日期序列, 无数据的日子补零。chars 来自 chat_logs(与聊天
+    记录菜单同口径): 字符与 token 是两种单位, 代码/英文场景字符可达
+    token 的 5~6 倍, 仪表盘同时给出避免跨页误读。"""
     session = get_session()
     try:
         from backend.models import ChatLog
+        if month:
+            try:
+                first = datetime.strptime(month, "%Y-%m").replace(
+                    hour=0, minute=0, second=0, microsecond=0)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="month 格式须为 YYYY-MM")
+            if first > datetime.now().replace(hour=0, minute=0, second=0, microsecond=0):
+                raise HTTPException(status_code=400, detail="不能查询未来月份")
+            if first.year < 2023:
+                raise HTTPException(status_code=400, detail="时间范围非法")
+            last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+            start = first
+            num_days = (last - first).days + 1
+        else:
+            days = max(7, min(int(days), 90))
+            today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            start = today_start - timedelta(days=days - 1)
+            last = today_start
+            num_days = days
         rows = (
             session.query(
                 func.date(UsageLog.created_at).label("d"),
                 func.count(UsageLog.id),
                 func.coalesce(func.sum(UsageLog.total_tokens), 0),
             )
-            .filter(UsageLog.user_id == user.id, UsageLog.created_at >= start)
+            .filter(UsageLog.user_id == user.id, UsageLog.created_at >= start,
+                    UsageLog.created_at <= last + timedelta(days=1))
             .group_by(func.date(UsageLog.created_at))
             .all()
         )
@@ -144,13 +170,14 @@ async def usage_daily(days: int = 30, user: User = Depends(get_current_user_from
                 func.date(ChatLog.created_at).label("d"),
                 func.coalesce(func.sum(ChatLog.total_chars), 0),
             )
-            .filter(ChatLog.user_id == user.id, ChatLog.created_at >= start)
+            .filter(ChatLog.user_id == user.id, ChatLog.created_at >= start,
+                    ChatLog.created_at <= last + timedelta(days=1))
             .group_by(func.date(ChatLog.created_at))
             .all()
         )
         chars_by_date = {str(r[0]): int(r[1] or 0) for r in char_rows}
         data = []
-        for i in range(days):
+        for i in range(num_days):
             d = (start + timedelta(days=i)).strftime("%Y-%m-%d")
             calls, tokens = by_date.get(d, (0, 0))
             data.append({"date": d, "calls": calls, "tokens": tokens,

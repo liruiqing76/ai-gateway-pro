@@ -63,7 +63,8 @@ class TestUsageSummary:
         c, token = client
         resp = c.get("/api/usage/summary", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
-        assert resp.json() == {"total": 0, "today": 0, "today_tokens": 0, "failed": 0}
+        assert resp.json() == {"total": 0, "today": 0, "today_tokens": 0,
+                               "total_tokens": 0, "failed": 0}
 
     def test_summary_with_data(self, client):
         c, token = client
@@ -95,6 +96,7 @@ class TestUsageSummary:
         assert data["today"] == 7
         assert data["failed"] == 2
         assert data["today_tokens"] > 0
+        assert data["total_tokens"] >= data["today_tokens"]
 
     def test_summary_requires_auth(self, client):
         c, _ = client
@@ -125,6 +127,58 @@ class TestUsageSummary:
         c, _ = client
         resp = c.get("/api/usage/monthly")
         assert resp.status_code == 401
+
+
+class TestUsageDailyMonth:
+    def test_daily_month_returns_full_month(self, client):
+        """month=YYYY-MM 返回该自然月每天(日历用), 无数据日补零"""
+        c, token = client
+        from datetime import datetime
+        import calendar
+        from backend.models import get_session, User
+        s = get_session()
+        try:
+            u = s.query(User).filter_by(email="usage@x.com").first()
+            _insert_logs(u.id, n=2)
+        finally:
+            s.close()
+
+        ym = datetime.now().strftime("%Y-%m")
+        month_days = calendar.monthrange(datetime.now().year, datetime.now().month)[1]
+        resp = c.get(f"/api/usage/daily?month={ym}",
+                     headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == month_days
+        # 序列从月初 1 号开始, 连续无跳号
+        assert data[0]["date"].endswith("-01")
+        today = datetime.now().strftime("%Y-%m-%d")
+        row = next(d for d in data if d["date"] == today)
+        assert row["calls"] == 2
+        assert row["tokens"] > 0
+        assert all("calls" in d and "tokens" in d for d in data)
+
+    def test_daily_month_bad_format_400(self, client):
+        c, token = client
+        resp = c.get("/api/usage/daily?month=2026-13",
+                     headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 400
+
+    def test_daily_month_future_400(self, client):
+        c, token = client
+        from datetime import datetime, timedelta
+        future = (datetime.now() + timedelta(days=40)).strftime("%Y-%m")
+        resp = c.get(f"/api/usage/daily?month={future}",
+                     headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 400
+
+    def test_daily_default_days_behavior(self, client):
+        """不带 month 时保持默认最近 30 天行为"""
+        c, token = client
+        resp = c.get("/api/usage/daily",
+                     headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 30
 
 
 class TestUsageList:

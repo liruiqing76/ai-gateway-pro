@@ -5,101 +5,94 @@
       <p>{{ $t('dashboard.welcomeDesc') }}</p>
     </div>
 
-    <!-- 统计卡片组: 图标行 + 大数值 + 进度条/说明 -->
-    <el-row :gutter="24" style="margin-bottom:24px">
-      <el-col :span="6">
+    <!-- 核心统计: 6 张卡 — 今日/总调用、今日/总Token、可用模型、分组 -->
+    <el-row :gutter="16" style="margin-bottom:24px">
+      <el-col :span="4">
+        <div class="stat-card-v2">
+          <div class="stat-head">
+            <el-icon class="stat-head-icon" :size="18"><Clock /></el-icon>
+            {{ $t('dashboard.todayCalls') }}
+          </div>
+          <div class="stat-value">{{ stats.today.toLocaleString() }}</div>
+          <div class="stat-caption">{{ $t('dashboard.todayCallsCaption', { n: stats.failed.toLocaleString() }) }}</div>
+        </div>
+      </el-col>
+      <el-col :span="4">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><DataLine /></el-icon>
-            {{ $t('dashboard.todayCalls') }}
+            {{ $t('dashboard.totalCalls') }}
           </div>
-          <div class="stat-value">{{ stats.used }} <span class="stat-unit">/ {{ stats.daily }}</span></div>
-          <div class="stat-bar">
-            <div class="stat-bar-fill" :style="{ width: Math.min(stats.pct, 100) + '%' }"></div>
-          </div>
-          <div class="stat-caption">{{ $t('dashboard.quotaUsage', { pct: stats.pct }) }}</div>
+          <div class="stat-value">{{ stats.total.toLocaleString() }}</div>
+          <div class="stat-caption">{{ $t('dashboard.totalCallsCaption') }}</div>
         </div>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><Coin /></el-icon>
             {{ $t('dashboard.todayTokens') }}
           </div>
-          <div class="stat-value">{{ (usageSummary.today_tokens || 0).toLocaleString() }}</div>
-          <div class="stat-caption">{{ $t('dashboard.totalTokensCaption', { total: totalTokens.toLocaleString(), calls: usageSummary.total.toLocaleString() }) }}</div>
+          <div class="stat-value">{{ stats.todayTokens.toLocaleString() }}</div>
+          <div class="stat-caption">{{ $t('dashboard.todayTokensCaption') }}</div>
         </div>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
+        <div class="stat-card-v2">
+          <div class="stat-head">
+            <el-icon class="stat-head-icon" :size="18"><TrendCharts /></el-icon>
+            {{ $t('dashboard.totalTokens') }}
+          </div>
+          <div class="stat-value">{{ stats.totalTokens.toLocaleString() }}</div>
+          <div class="stat-caption">{{ $t('dashboard.totalTokensCaption') }}</div>
+        </div>
+      </el-col>
+      <el-col :span="4">
         <div class="stat-card-v2">
           <div class="stat-head">
             <el-icon class="stat-head-icon" :size="18"><Box /></el-icon>
-            {{ $t('billing.currentPlan') }}
+            {{ $t('dashboard.availableModels') }}
           </div>
-          <div class="stat-value">{{ stats.tierLabel }}</div>
-          <div class="stat-caption">{{ stats.tierExpires }}</div>
+          <div class="stat-value">{{ stats.models }}</div>
+          <div class="stat-caption">{{ $t('dashboard.providersCaption', { n: stats.providers }) }}</div>
         </div>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <div class="stat-card-v2">
           <div class="stat-head">
-            <el-icon class="stat-head-icon" :size="18"><Timer /></el-icon>
-            {{ $t('dashboard.quotaReset') }}
+            <el-icon class="stat-head-icon" :size="18"><FolderOpened /></el-icon>
+            {{ $t('dashboard.routerGroups') }}
           </div>
-          <div class="stat-value">00:00</div>
-          <div class="stat-caption">{{ $t('dashboard.resetHint') }}</div>
+          <div class="stat-value">{{ stats.groups }}</div>
+          <div class="stat-caption">{{ $t('dashboard.groupsCaption') }}</div>
         </div>
       </el-col>
     </el-row>
 
-    <!-- Token 趋势: 按日(近30天) / 按月(近12个月) -->
-    <section class="usage-card" style="margin-bottom:24px">
-      <div class="usage-head">
-        <h3>{{ $t('dashboard.tokenTrend') }}</h3>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span v-if="activeTrendList.length" class="usage-meta">
-            {{ $t('dashboard.trendTotals', { tokens: trendSum.tokens.toLocaleString(), chars: trendSum.chars.toLocaleString() }) }}
-          </span>
-          <el-radio-group v-model="trendMode" size="small" @change="onTrendModeChange">
-            <el-radio-button value="day">{{ $t('dashboard.viewDaily') }}</el-radio-button>
-            <el-radio-button value="month">{{ $t('dashboard.viewMonthly') }}</el-radio-button>
-          </el-radio-group>
-        </div>
-      </div>
-      <div v-if="trendMax > 0" class="trend-chart">
-        <div v-for="d in activeTrendList" :key="d.date || d.month" class="trend-col"
-             :title="trendTitle(d)">
-          <div class="trend-bar-wrap">
-            <div class="trend-bar" :style="{ height: Math.max(d.tokens / trendMax * 100, d.tokens > 0 ? 4 : 1.5) + '%' }"
-                 :class="{ 'trend-bar-empty': d.tokens === 0 }"></div>
-          </div>
-          <div class="trend-date">{{ trendMode === 'day' ? (d.date || '').slice(8) : (d.month || '').slice(5) }}</div>
-        </div>
-      </div>
-      <div v-else class="trend-empty">{{ $t('dashboard.noTokenData') }}</div>
-    </section>
-
-    <!-- 最近用量 -->
+    <!-- 使用日历: 月视图, 无数据日灰显, 颜色深浅 = 当日调用量级 -->
     <section class="usage-card">
       <div class="usage-head">
-        <h3>{{ $t('dashboard.recentUsage') }}</h3>
-        <span v-if="usageList.length" class="usage-meta">
-          {{ $t('dashboard.usageSummary', { count: usageList.length, today: usageSummary.today }) }}
+        <h3>{{ $t('dashboard.usageCalendar') }}</h3>
+        <span v-if="monthDate" class="usage-meta">
+          {{ $t('dashboard.calMonthSummary', {
+            calls: monthSum.calls.toLocaleString(),
+            tokens: monthSum.tokens.toLocaleString(),
+          }) }}
         </span>
+        <span v-else class="usage-meta"></span>
       </div>
-      <el-table :data="usageList" :empty-text="$t('dashboard.noRecords')" v-loading="loading">
-        <el-table-column prop="time" :label="$t('dashboard.time')" width="170" />
-        <el-table-column prop="provider" :label="$t('dashboard.provider')" />
-        <el-table-column prop="model" :label="$t('dashboard.model')" min-width="160" />
-        <el-table-column prop="tokens" label="Token" width="110" align="right">
-          <template #default="{ row }">{{ row.tokens.toLocaleString() }}</template>
-        </el-table-column>
-        <el-table-column :label="$t('dashboard.status')" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? $t('common.success') : $t('common.failed') }}</el-tag>
+      <el-config-provider :locale="zhCn">
+        <el-calendar v-model="calDate" @change="onCalChange">
+          <template #date-cell="{ data }">
+            <div class="cal-cell" :class="calCellClass(data.day)">
+              <div class="cal-day">{{ data.day.slice(8).replace(/^0/, '') }}</div>
+              <div v-if="dayCalls(data.day) > 0" class="cal-num" :title="calTooltip(data.day)">
+                {{ dayCalls(data.day) }}
+              </div>
+            </div>
           </template>
-        </el-table-column>
-      </el-table>
+        </el-calendar>
+      </el-config-provider>
     </section>
   </div>
 </template>
@@ -107,90 +100,95 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DataLine, Box, Timer, Coin } from '@element-plus/icons-vue'
+import { Clock, DataLine, Coin, TrendCharts, Box, FolderOpened } from '@element-plus/icons-vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import api from '../api'
 
 const { t } = useI18n()
 
-const loading = ref(false)
-const stats = ref({ used: 0, daily: 100, pct: 0, tierLabel: '', tierExpires: '', resetTime: '00:00' })
-const usageList = ref([])
-const usageSummary = ref({ total: 0, today: 0, today_tokens: 0, failed: 0 })
-const dailyList = ref([])   // 近 N 天 [{date, calls, tokens}]
-const monthlyList = ref([]) // 近 N 月 [{month, calls, tokens}]
-const trendMode = ref('day')
+const stats = ref({ total: 0, today: 0, totalTokens: 0, todayTokens: 0, models: 0, providers: 0, groups: 0, failed: 0 })
 
-const activeTrendList = computed(() =>
-  trendMode.value === 'month' ? monthlyList.value : dailyList.value)
-const trendMax = computed(() =>
-  Math.max(...activeTrendList.value.map(d => d.tokens || 0), 0))
-// 窗口合计(Token+字符双口径): 字符来自聊天记录同源数据(chat_logs),
-// 代码/英文场景字符可达 token 的 5~6 倍, 两数并列避免跨页对比误读
-const trendSum = computed(() => ({
-  tokens: activeTrendList.value.reduce((s, d) => s + (d.tokens || 0), 0),
-  chars: activeTrendList.value.reduce((s, d) => s + (d.chars || 0), 0),
-}))
-// 今日Token卡片的"累计"口径跟随趋势视图(按日=近30天, 按月=近12个月)
-const totalTokens = computed(() => trendSum.value.tokens)
+// ── 使用日历 ──
+const calDate = ref(new Date())           // el-calendar 当前视图月份
+const monthData = ref({})                 // { "YYYY-MM-DD": {calls, tokens} }, 当前显示月
+const monthDate = ref('')                 // 当前显示月 "YYYY-MM"
+let lastMonth = ''                        // 防抖: 同一月不重复拉取
 
-function trendTitle(d) {
-  const label = d.date || d.month
-  const n = d.calls ?? 0
-  return `${label} · ${t('dashboard.trendCalls', { n })} · ${(d.tokens || 0).toLocaleString()} token`
+function dayCalls(day) {
+  return (monthData.value[day] || {}).calls || 0
+}
+function calTooltip(day) {
+  const d = monthData.value[day]
+  if (!d) return ''
+  return t('dashboard.calTooltip', { calls: d.calls.toLocaleString(), tokens: d.tokens.toLocaleString() })
+}
+// 无数据灰 / 有数据按调用数 3 档加深
+function calCellClass(day) {
+  const n = dayCalls(day)
+  if (n === 0) return 'cal-cell-empty'
+  if (n < 5) return 'cal-cell-l1'
+  if (n < 20) return 'cal-cell-l2'
+  return 'cal-cell-l3'
+}
+const monthSum = computed(() => {
+  let calls = 0, tokens = 0
+  for (const d of Object.values(monthData.value)) { calls += d.calls; tokens += d.tokens }
+  return { calls, tokens }
+})
+
+async function loadMonth(date) {
+  const ym = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  if (ym === lastMonth && Object.keys(monthData.value).length) return
+  lastMonth = ym
+  try {
+    const resp = await api.get(`/api/usage/daily?month=${ym}`)
+    const list = resp.data.data || []
+    const map = {}
+    for (const d of list) map[d.date] = { calls: d.calls, tokens: d.tokens }
+    monthData.value = map
+    monthDate.value = ym
+  } catch (e) { /* 月份数据失败保持空日历 */ }
 }
 
-async function onTrendModeChange(mode) {
-  if (mode === 'month' && !monthlyList.value.length) {
-    try {
-      const resp = await api.get('/api/usage/monthly?months=12')
-      monthlyList.value = resp.data.data || []
-    } catch (e) { /* 保持空列表 */ }
-  }
-}
-
-function tierLabel(tier) {
-  if (tier === 'pro') return t('dashboard.tierPro')
-  if (tier === 'enterprise') return t('dashboard.tierEnterprise')
-  return t('dashboard.tierFree')
-}
+function onCalChange(d) { loadMonth(d) }
 
 onMounted(async () => {
-  try {
-    const resp = await api.get('/api/billing/me')
-    const d = resp.data
-    const used = d.quota_used_today || 0
-    const daily = d.quota_daily || 100
-    stats.value = {
-      used, daily,
-      pct: daily ? Math.round(used / daily * 100) : 0,
-      tierLabel: tierLabel(d.tier),
-      tierExpires: d.tier_expires_at
-        ? t('dashboard.expiresAt', { date: new Date(d.tier_expires_at).toLocaleDateString() })
-        : t('dashboard.permanent'),
-      resetTime: d.quota_reset_at ? new Date(d.quota_reset_at).toLocaleTimeString() : '00:00',
-    }
-  } catch (e) { /* login first */ }
-
-  try {
-    const [listResp, sumResp, dailyResp] = await Promise.all([
-      api.get('/api/usage?limit=50'),
-      api.get('/api/usage/summary'),
-      api.get('/api/usage/daily?days=30'),
-    ])
-    usageList.value = listResp.data.data || []
-    usageSummary.value = sumResp.data || usageSummary.value
-    dailyList.value = dailyResp.data.data || []
-  } catch (e) { /* usage 读取失败不阻塞主面板 */ }
+  await loadMonth(new Date())
+  // usage / providers / routers 三个接口各自失败不阻塞其它统计
+  await Promise.allSettled([
+    (async () => {
+      const resp = await api.get('/api/usage/summary')
+      const d = resp.data
+      stats.value.total = d.total || 0
+      stats.value.today = d.today || 0
+      stats.value.totalTokens = d.total_tokens || 0
+      stats.value.todayTokens = d.today_tokens || 0
+      stats.value.failed = d.failed || 0
+    })(),
+    (async () => {
+      // 可用模型 = 全部启用渠道的模型并集(去重); 渠道数 = 启用渠道数
+      const resp = await api.get('/api/providers')
+      const list = resp.data || []
+      const enabledList = list.filter(p => p.enabled)
+      const modelSet = new Set()
+      for (const p of enabledList) for (const m of (p.models || [])) modelSet.add(m)
+      stats.value.models = modelSet.size
+      stats.value.providers = enabledList.length
+    })(),
+    (async () => {
+      const resp = await api.get('/api/routers')
+      stats.value.groups = Object.keys((resp.data || {}).data || {}).length
+    })(),
+  ])
 })
 </script>
 
 <style scoped>
-/* 统计卡: 对齐原型(图标标签行 / 大数值 / 进度条 / 说明) */
 .stat-card-v2 {
   background: var(--gw-card);
   border: 1px solid var(--gw-border);
   border-radius: var(--gw-radius-md);
-  padding: 20px;
+  padding: 18px;
 }
 .stat-head {
   display: flex;
@@ -202,27 +200,10 @@ onMounted(async () => {
 .stat-head-icon { color: var(--gw-primary); }
 .stat-value {
   margin-top: 8px;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--gw-foreground);
-}
-.stat-unit {
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--gw-muted-foreground);
-}
-.stat-bar {
-  margin-top: 12px;
-  height: 6px;
-  border-radius: var(--gw-radius-pill);
-  background: var(--gw-primary-50);
-  overflow: hidden;
-}
-.stat-bar-fill {
-  height: 100%;
-  border-radius: var(--gw-radius-pill);
-  background: var(--gw-primary);
-  transition: width 0.4s ease;
+  word-break: break-all;
 }
 .stat-caption {
   margin-top: 8px;
@@ -230,7 +211,7 @@ onMounted(async () => {
   color: var(--gw-muted-foreground);
 }
 
-/* 最近用量卡: 标题行 + 右侧统计 */
+/* 使用日历卡 */
 .usage-card {
   background: var(--gw-card);
   border: 1px solid var(--gw-border);
@@ -252,50 +233,32 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--gw-muted-foreground);
 }
-.usage-card :deep(.el-table) {
-  margin-top: 16px;
-}
 
-/* 按日 Token 趋势图 */
-.trend-chart {
+/* 日历格子: 空灰, 有数据按调用数 3 档深浅 */
+.usage-card :deep(.el-calendar) {
+  --el-calendar-cell-width: 100%;
+}
+.cal-cell {
+  min-height: 52px;
+  padding: 4px 6px;
+  border-radius: 6px;
   display: flex;
-  align-items: stretch;
-  gap: 3px;
-  padding: 20px 24px 16px;
+  flex-direction: column;
+  justify-content: space-between;
 }
-.trend-col {
-  flex: 1;
-  min-width: 0;
-  cursor: default;
-}
-.trend-bar-wrap {
-  height: 120px;
-  display: flex;
-  align-items: flex-end;
-}
-.trend-bar {
-  width: 100%;
-  background: var(--gw-primary);
-  border-radius: 4px 4px 0 0;
-  opacity: .85;
-  transition: opacity .15s, height .3s ease;
-}
-.trend-col:hover .trend-bar {
-  opacity: 1;
-}
-.trend-bar-empty {
-  background: var(--gw-border);
-}
-.trend-date {
-  margin-top: 6px;
-  font-size: 10px;
+.cal-day {
+  font-size: 12px;
   color: var(--gw-muted-foreground);
-  text-align: center;
-  font-family: monospace;
 }
-.trend-empty {
-  padding: 28px 24px 32px;
+.cal-num {
+  align-self: flex-end;
   font-size: 13px;
-  color: var(--gw-muted-foreground);
+  font-weight: 600;
+  color: var(--gw-foreground);
 }
+.cal-cell-empty { background: transparent; }
+.cal-cell-l1 { background: var(--gw-primary-50); }
+.cal-cell-l2 { background: var(--gw-primary-100); }
+.cal-cell-l3 { background: var(--gw-primary); }
+.cal-cell-l3 .cal-day, .cal-cell-l3 .cal-num { color: #fff; }
 </style>
