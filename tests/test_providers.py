@@ -504,3 +504,96 @@ class TestFetchUpstreamErrors:
             pass
         assert resp.status_code == 200
         assert resp.json()["models_count"] == 0
+
+class TestZenChannelCuration:
+    """opencode zen 免 key 渠道: 刷新/获取必须走 models.dev 免费档 + 真探测,
+
+    上游 /v1/models 是 63 个全量(无 pricing), 通用免费过滤会全部保留。
+    """
+
+    def test_fetch_models_zen_uses_curation(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        ZEN = pm.zen_sources.ZEN_BASE_URL
+        monkeypatch.setattr(pm.zen_sources, "fetch_zen_free_models",
+                            lambda: ["m1-free", "m2-free", "m3-free"])
+        monkeypatch.setattr(
+            pm.zen_sources, "probe_many",
+            lambda ms: {"m1-free": (True, "ok"), "m2-free": (False, "401"),
+                        "m3-free": (True, "ok")})
+        r = client.post("/api/providers/fetch-models", json={
+            "base_url": ZEN, "api_key": "", "free_only": True,
+        }, headers=auth_headers)
+        assert r.status_code == 200
+        # 只有真探测可用的免费模型, 不会列出付费/失效模型
+        assert r.json()["models"] == ["m1-free", "m3-free"]
+
+    def test_fetch_models_zen_no_free_list_502(self, auth_headers, monkeypatch):
+        import backend.api.providers as pm
+        ZEN = pm.zen_sources.ZEN_BASE_URL
+        monkeypatch.setattr(pm.zen_sources, "fetch_zen_free_models", lambda: [])
+        r = client.post("/api/providers/fetch-models", json={
+            "base_url": ZEN, "api_key": "", "free_only": True,
+        }, headers=auth_headers)
+        assert r.status_code == 502
+
+    def test_refresh_zen_channel_replaces_full_list(self, auth_headers, monkeypatch):
+        """渠道里已有 63 个模型(脏数据)时, 刷新后只剩实测可用免费集。"""
+        import backend.api.providers as pm
+        from backend.models import get_session, User, Router
+        from backend.core.zen_sources import _apply_zen_provider, _ensure_zen_router
+        ZEN = pm.zen_sources.ZEN_BASE_URL
+        resp = client.post("/api/providers", json={
+            "name": "opencode", "base_url": ZEN, "api_key": "x",
+            "models": [f"paid-model-{i}" for i in range(63)],
+            "auto_fetch": False,
+        }, headers=auth_headers)
+        pid = resp.json()["id"]
+        assert resp.json()["models_count"] == 63
+
+        def fake_sync():
+            s = get_session()
+            try:
+                users = s.query(User).filter_by(is_active=True).all()
+                for u in users:
+                    _apply_zen_provider(s, u, ["m1-free", "m3-free"])
+                    _ensure_zen_router(s, u, ["m1-free", "m3-free"])
+                s.commit()
+            finally:
+                s.close()
+            return {"ok": True, "usable": ["m1-free", "m3-free"]}
+        monkeypatch.setattr(pm.zen_sources, "sync_zen_free_models", fake_sync)
+
+        r = client.post(f"/api/providers/{pid}/refresh-models", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["models_count"] == 2
+
+        # 渠道模型已替换为免费集; opencode 路由组同步维护
+        r = client.get(f"/api/providers/{pid}", headers=auth_headers)
+        assert r.json()["models"] == ["m1-free", "m3-free"]
+        s = get_session()
+        try:
+            u = s.query(User).filter_by(username="provideruser").first()
+            rg = s.query(Router).filter_by(user_id=u.id, name="opencode").first()
+            assert rg is not None
+            assert rg.models == ["opencode-m1-free", "opencode-m3-free"]
+        finally:
+            s.close()
+
+    def test_refresh_zen_all_probe_failed_keeps_channel(self, auth_headers, monkeypatch):
+        """探测全灭(网络/上游故障)时保留现有渠道, 不清空。"""
+        import backend.api.providers as pm
+        from backend.models import get_session
+        ZEN = pm.zen_sources.ZEN_BASE_URL
+        resp = client.post("/api/providers", json={
+            "name": "opencode", "base_url": ZEN, "api_key": "x",
+            "models": ["m1-free", "m3-free"], "auto_fetch": False,
+        }, headers=auth_headers)
+        pid = resp.json()["id"]
+
+        monkeypatch.setattr(pm.zen_sources, "sync_zen_free_models",
+                            lambda: {"ok": True, "usable": []})
+        r = client.post(f"/api/providers/{pid}/refresh-models", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["models_count"] == 2
+        r = client.get(f"/api/providers/{pid}", headers=auth_headers)
+        assert r.json()["models"] == ["m1-free", "m3-free"]

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from backend.auth.middleware import get_current_user_from_jwt
 from backend.auth.security import encrypt_secret, decrypt_secret, mask_secret
 from backend.core.proxy import get_context_length
+from backend.core import zen_sources
 from backend.models import get_session, User, Provider, ProviderTemplate, Router, ModelSpeedLog
 
 logger = logging.getLogger("gateway.providers")
@@ -82,6 +83,16 @@ def _is_free_item(item: dict) -> bool:
         if vals:
             return all(v == 0 for v in vals)
     return True  # 无 pricing 信息 → 保守保留
+
+
+def _is_zen_channel(base_url: str) -> bool:
+    """opencode zen 免 key 渠道识别。
+
+    上游 /v1/models 返回全量 63 个模型且无 pricing 字段, 通用免费过滤
+    (_is_free_item 对无 pricing 保守全留)会全部保留, 必须走 models.dev
+    免费档 + 真探测的策展路径(与定时自动同步同一套逻辑)。
+    """
+    return (base_url or "").rstrip("/") == zen_sources.ZEN_BASE_URL
 
 
 async def fetch_upstream_models(base_url: str, api_key: str,
@@ -428,8 +439,19 @@ async def fetch_models(
     user: User = Depends(get_current_user_from_jwt),
 ):
     """用表单中的 URL+Key 实时拉取上游模型列表(不落库)"""
-    models = await fetch_upstream_models(data.base_url, data.api_key,
-                                         free_only=data.free_only)
+    if _is_zen_channel(data.base_url):
+        # opencode zen: /v1/models 是 63 个全量(无 pricing), 通用拉取会
+        # 把付费模型也列出来。改为 models.dev 免费档 + 真探测, 只显示
+        # 实测可用的免费模型。
+        free = zen_sources.fetch_zen_free_models()
+        if not free:
+            raise HTTPException(status_code=502,
+                                detail="未能获取 opencode 免费模型列表(models.dev)")
+        results = zen_sources.probe_many(free)
+        models = [m for m, (ok, _) in results.items() if ok]
+    else:
+        models = await fetch_upstream_models(data.base_url, data.api_key,
+                                             free_only=data.free_only)
     return {"ok": True, "models": models, "count": len(models)}
 
 
@@ -459,22 +481,40 @@ async def refresh_provider_models(
     provider_id: int,
     user: User = Depends(get_current_user_from_jwt),
 ):
-    """重新拉取上游模型并更新库中渠道, 同时重建路由组"""
+    """重新拉取上游模型并更新库中渠道, 同时重建路由组
+
+    opencode zen 渠道特殊处理: 上游 /v1/models 返回全量 63 个模型且无
+    pricing 字段, 通用免费过滤会全部保留, 因此走 models.dev 免费档 +
+    真探测的策展路径(与定时自动同步同一套逻辑), 只落实测可用的免费模型。
+    """
     session = get_session()
     try:
         p = session.query(Provider).filter_by(id=provider_id, user_id=user.id).first()
         if not p:
             raise HTTPException(status_code=404, detail="渠道不存在")
-        try:
-            api_key = decrypt_secret(p.api_key_encrypted)
-        except Exception:
-            # 免 key 匿名渠道(如 opencode zen)存的是空串/未加密数据:
-            # 按无密钥渠道拉取, 而不是让解密异常把整个接口打成 500
-            api_key = ""
-        models = await fetch_upstream_models(p.base_url, api_key,
-                                             free_only=p.free_only)
-        models = filter_chat_models(models)  # 过滤非对话模型, 防止渠道被全量污染
-        p.models = models  # 过滤结果必须落库(此前漏赋值导致刷新按钮假成功)
+        if _is_zen_channel(p.base_url):
+            result = zen_sources.sync_zen_free_models()
+            if not result.get("ok"):
+                raise HTTPException(status_code=502, detail=result.get(
+                    "error", "opencode 免费模型同步失败"))
+            session.expire_all()  # sync 在独立会话里提交, 重读渠道最新值
+            if not (result.get("usable") or []):
+                # 全灭保护: 探测全部失败, sync 未覆盖任何渠道, 保留现状
+                return {"ok": True, "models_count": len(p.models or []),
+                        "routers_updated": [],
+                        "msg": "探测全部失败(疑似网络/上游故障), 保留现有模型不变, 请稍后再试"}
+            models = sorted(set(p.models or []))  # sync 已把渠道更新为实测可用集
+        else:
+            try:
+                api_key = decrypt_secret(p.api_key_encrypted)
+            except Exception:
+                # 免 key 匿名渠道(如 opencode zen)存的是空串/未加密数据:
+                # 按无密钥渠道拉取, 而不是让解密异常把整个接口打成 500
+                api_key = ""
+            models = await fetch_upstream_models(p.base_url, api_key,
+                                                 free_only=p.free_only)
+            models = filter_chat_models(models)  # 过滤非对话模型, 防止渠道被全量污染
+            p.models = models  # 过滤结果必须落库(此前漏赋值导致刷新按钮假成功)
         session.commit()
 
         groups = rebuild_user_routers(session, user.id)
