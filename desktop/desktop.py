@@ -116,10 +116,29 @@ class CheckinAPI:
                 old_cwd = os.getcwd()
                 os.chdir(str(script.parent))
                 try:
-                    runpy.run_path(str(script), run_name="__main__")
-                finally:
-                    os.chdir(old_cwd)
-                return "签到完成"
+                    # 重定向 stdout/stderr 捕获脚本输出
+                    import io
+                    old_stdout, old_stderr = sys.stdout, sys.stderr
+                    buf = io.StringIO()
+                    sys.stdout = buf
+                    sys.stderr = buf
+                    try:
+                        runpy.run_path(str(script), run_name="__main__")
+                    finally:
+                        sys.stdout, sys.stderr = old_stdout, old_stderr
+                        os.chdir(old_cwd)
+                    output = buf.getvalue().strip()
+                    if output:
+                        return output[-500:]
+                except Exception:
+                    os.chdir(old_cwd) if old_cwd != os.getcwd() else None
+                # 若 stdout 无输出，从签到日志文件读取最近几行
+                log_file = get_state_dir() / "checkin.log"
+                if log_file.exists():
+                    lines = log_file.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+                    if lines:
+                        return "\n".join(lines[-5:])[-500:]
+                return "签到完成（无输出）"
             r = subprocess.run(
                 [sys.executable, str(script)],
                 capture_output=True, text=True, timeout=60,

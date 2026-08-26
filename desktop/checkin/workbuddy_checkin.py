@@ -33,6 +33,7 @@ import sys
 import json
 import time
 import ctypes
+import subprocess
 import argparse
 from datetime import date
 
@@ -360,6 +361,30 @@ def calibrate():
     print("以后直接运行: python workbuddy_checkin.py")
 
 
+# ---------- 自动启动目标程序 ----------
+def launch_if_not_running(exe_name: str, exe_path: str | None = None) -> bool:
+    """检测进程是否存在，不存在则尝试启动。返回 True 表示当前已在运行。"""
+    try:
+        output = subprocess.check_output(["tasklist"], text=True, encoding="gbk", errors="replace")
+        if exe_name.lower() in output.lower():
+            return True
+    except Exception:
+        pass
+    if exe_path:
+        from pathlib import Path
+        if Path(exe_path).exists():
+            try:
+                subprocess.Popen([exe_path])
+                log("已启动 %s: %s" % (exe_name, exe_path))
+                time.sleep(5)  # 等待启动+登录窗口出现
+                return True
+            except Exception as e:
+                log("启动 %s 失败: %s" % (exe_name, e))
+                return False
+    log("未找到 %s 的可执行文件路径，请手动确保程序已运行。" % exe_name)
+    return False
+
+
 # ---------- 执行签到 ----------
 def run(dry=False):
     cfg = load_config()
@@ -372,6 +397,14 @@ def run(dry=False):
     if already_today():
         log("今天 (%s) 已经签到过，跳过。" % date.today())
         return
+
+    # 自动检测并启动 WorkBuddy（若未运行）
+    try:
+        from detect_exe import find_workbuddy_exe
+        wb_exe = find_workbuddy_exe()
+    except ImportError:
+        wb_exe = r"C:\Users\leslie\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe"
+    launch_if_not_running("WorkBuddy", wb_exe)
 
     win = find_window(cfg["window_title"])
     if not win:
