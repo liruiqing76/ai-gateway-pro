@@ -44,30 +44,35 @@ def find_trae_exe():
         r"C:\Program Files (x86)\Trae Work CN\TraeWorkCN.exe",
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\Trae Work CN\TraeWorkCN.exe"),
         os.path.expandvars(r"%USERPROFILE%\AppData\Local\Programs\Trae Work CN\TraeWorkCN.exe"),
+        r"D:\Programs\TRAE SOLO CN\TRAE SOLO CN.exe",
     ]
     for p in candidates:
         if os.path.isfile(p):
             return p
+    # 搜索注册表 (HKLM + HKCU)
     try:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") as key:
-            i = 0
-            while True:
-                try:
-                    subkey_name = winreg.EnumKey(key, i)
-                    with winreg.OpenKey(key, subkey_name) as sub:
-                        try:
-                            name, _ = winreg.QueryValueEx(sub, "DisplayName")
-                            if "Trae" in name and "Work" in name:
-                                loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
-                                exe = os.path.join(loc, "TraeWorkCN.exe")
-                                if os.path.isfile(exe):
-                                    return exe
-                        except FileNotFoundError:
-                            pass
-                    i += 1
-                except OSError:
-                    break
+        for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            with winreg.OpenKey(hive, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") as key:
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(key, i)
+                        with winreg.OpenKey(key, subkey_name) as sub:
+                            try:
+                                name, _ = winreg.QueryValueEx(sub, "DisplayName")
+                                if "Trae" in name and ("Work" in name or "Solo" in name):
+                                    loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                    # 尝试多种 exe 名
+                                    for exe_name in ("TraeWorkCN.exe", "TRAE SOLO CN.exe", "Trae CN.exe"):
+                                        exe = os.path.join(loc, exe_name)
+                                        if os.path.isfile(exe):
+                                            return exe
+                            except FileNotFoundError:
+                                pass
+                        i += 1
+                    except OSError:
+                        break
     except Exception:
         pass
     return None
