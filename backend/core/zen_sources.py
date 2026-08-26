@@ -4,20 +4,18 @@
 OpenCode Zen 免费模型 — 自动发现 + 可用性探测 + 持续健康检测。
 
 思路(对齐"免费模型一直可用"):
-  1. 定时拉取 models.dev 快照(在线优先, 本地 opencode 缓存兜底), 提取 OpenCode Zen 免费模型
-     (cost==0 或 -free 后缀)
-  2. 对每个模型做真实探测(POST zen/v1/chat/completions, max_tokens=1): 200 = 可用
+  1. 定时拉取 zen 上游 /v1/models 目录, 提取官方免费档(模型 id 尾部带 -free;
+     目录本身区分免费/付费, 无需第三方快照)
+  2. 对每个 -free 模型做真实探测(POST zen/v1/chat/completions, max_tokens=1): 200 = 可用
   3. 同步: 为每个激活用户创建/更新 "opencode" 渠道(base_url=zen/v1, 免 key),
      models 只保留"实测可用"的模型
   4. 健康检测: 定时重新探测渠道内模型, 连续失败 N 次自动从 models 移除,
      保证渠道里的模型始终是活的; 瞬时抖动(网络/上游临时故障)不会被立刻踢掉
 """
 import concurrent.futures as cf
-import json
 import logging
 import threading
 import time
-from pathlib import Path
 
 import httpx
 
@@ -28,8 +26,7 @@ logger = logging.getLogger("gateway")
 
 ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 ZEN_CHAT_URL = ZEN_BASE_URL + "/chat/completions"
-MODELS_DEV_URL = "https://models.dev/api.json"
-LOCAL_MODELS_CACHE = Path.home() / ".cache" / "opencode" / "models.json"
+ZEN_MODELS_URL = ZEN_BASE_URL + "/models"
 
 _lock = threading.Lock()
 _runtime = {
@@ -41,38 +38,25 @@ _runtime = {
 
 
 # ---------- 数据源 ----------
-def _is_free_model(model_id: str, meta: dict) -> bool:
-    """免费判定: 价格全为 0(cost 字典/数字), 或模型 ID 带 -free 后缀。二者满足其一。"""
-    cost = (meta or {}).get("cost")
-    if cost == 0:
-        return True
-    if isinstance(cost, dict) and cost:
-        vals = [v for v in cost.values() if isinstance(v, (int, float))]
-        if vals and all(v == 0 for v in vals):
-            return True
-    return "free" in model_id.lower()
-
-
 def fetch_zen_free_models(timeout: float = 25.0) -> list:
-    """拉取 models.dev 快照中 opencode(OpenCode Zen) 的免费模型列表。在线失败回退本地缓存。
-    只收录免费档(cost 全 0 或 ID 带 free); opencode-go 等付费 provider 完全不碰。"""
-    data = None
+    """拉取 zen 上游 /v1/models 目录, 只收官方免费档(模型 id 尾部 -free)。
+
+    上游目录本身就是"免费 vs 付费"的权威来源, 不需要 models.dev 第三方
+    快照; 只探测 -free 结尾的模型, 其它一律不碰。失败返回空列表。
+    """
     try:
-        r = httpx.get(MODELS_DEV_URL, timeout=timeout,
+        r = httpx.get(ZEN_MODELS_URL, timeout=timeout,
                       headers={"User-Agent": "ai-gateway-pro/zen-sync"})
         r.raise_for_status()
         data = r.json()
     except Exception as e:
-        logger.warning("models.dev 在线拉取失败(%s), 回退本地缓存 %s", e, LOCAL_MODELS_CACHE)
-    if not data:
-        try:
-            data = json.loads(LOCAL_MODELS_CACHE.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.warning("本地 models.dev 缓存读取失败: %s", e)
-            return []
-    zen = (data or {}).get("opencode") or {}
-    ms = zen.get("models") or {}
-    return [mid for mid, m in ms.items() if _is_free_model(mid, m)]
+        logger.warning("zen 上游模型目录拉取失败: %s", e)
+        return []
+    items = data.get("data") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    return sorted({it.get("id", "").strip() for it in items
+                   if isinstance(it, dict) and it.get("id", "").strip().endswith("-free")})
 
 
 # ---------- 探测 ----------
@@ -92,10 +76,11 @@ def probe_zen_model(model_id: str, timeout: float = 25.0) -> tuple:
         return False, f"ERR {str(e)[:70]}"
 
 
-def probe_many(models: list, max_workers: int = 8) -> dict:
-    """并发探测, 返回 {model: (ok, reason)}。"""
+def probe_many(models: list, max_workers: int = 8, timeout: float = 25.0) -> dict:
+    """并发探测, 返回 {model: (ok, reason)}。timeout 为单模型探测超时。"""
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        return dict(zip(models, ex.map(lambda m: probe_zen_model(m), models)))
+        return dict(zip(models, ex.map(lambda m: probe_zen_model(m, timeout=timeout),
+                                       models)))
 
 
 ZEN_PROVIDER_NAME = "opencode"
@@ -141,13 +126,13 @@ def _ensure_zen_router(session, user: User, models: list):
 
 
 # ---------- 同步(发现+探测+落地) ----------
-def sync_zen_free_models() -> dict:
+def sync_zen_free_models(probe_timeout: float = 25.0) -> dict:
     """执行一次完整同步: 拉列表 → 真探测 → 给每个激活用户建/更新渠道。线程安全。"""
     with _lock:
         models = fetch_zen_free_models()
         if not models:
             return {"ok": False, "error": "未能获取 opencode 免费模型列表"}
-        results = probe_many(models)
+        results = probe_many(models, timeout=probe_timeout)
         usable = [m for m, (ok, _) in results.items() if ok]
         unusable = {m: why for m, (ok, why) in results.items() if not ok}
 

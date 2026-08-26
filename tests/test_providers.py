@@ -506,7 +506,7 @@ class TestFetchUpstreamErrors:
         assert resp.json()["models_count"] == 0
 
 class TestZenChannelCuration:
-    """opencode zen 免 key 渠道: 刷新/获取必须走 models.dev 免费档 + 真探测,
+    """opencode zen 免 key 渠道: 刷新/获取只探测目录里 -free 结尾的免费档,
 
     上游 /v1/models 是 63 个全量(无 pricing), 通用免费过滤会全部保留。
     """
@@ -518,8 +518,8 @@ class TestZenChannelCuration:
                             lambda: ["m1-free", "m2-free", "m3-free"])
         monkeypatch.setattr(
             pm.zen_sources, "probe_many",
-            lambda ms: {"m1-free": (True, "ok"), "m2-free": (False, "401"),
-                        "m3-free": (True, "ok")})
+            lambda ms, timeout=25.0: {"m1-free": (True, "ok"), "m2-free": (False, "401"),
+                                      "m3-free": (True, "ok")})
         r = client.post("/api/providers/fetch-models", json={
             "base_url": ZEN, "api_key": "", "free_only": True,
         }, headers=auth_headers)
@@ -550,7 +550,7 @@ class TestZenChannelCuration:
         pid = resp.json()["id"]
         assert resp.json()["models_count"] == 63
 
-        def fake_sync():
+        def fake_sync(probe_timeout=25.0):
             s = get_session()
             try:
                 users = s.query(User).filter_by(is_active=True).all()
@@ -591,7 +591,7 @@ class TestZenChannelCuration:
         pid = resp.json()["id"]
 
         monkeypatch.setattr(pm.zen_sources, "sync_zen_free_models",
-                            lambda: {"ok": True, "usable": []})
+                            lambda probe_timeout=25.0: {"ok": True, "usable": []})
         r = client.post(f"/api/providers/{pid}/refresh-models", headers=auth_headers)
         assert r.status_code == 200
         assert r.json()["models_count"] == 2

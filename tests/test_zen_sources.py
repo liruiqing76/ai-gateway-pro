@@ -48,23 +48,27 @@ def make_user(m, username="u1", email="u1@t.com"):
     return uid
 
 
-def test_fetch_zen_free_models_parses(monkeypatch, tmp_path):
-    """从 models.dev 格式的数据里提取 zen 免费模型: cost 全 0 或 ID 带 free; 付费绝不收录。"""
-    payload = {"opencode": {"models": {
-        "deepseek-v4-flash-free": {"cost": 0},
-        "glm-5": {"cost": 1},
-        "hy3-free": {"cost": {"input": 0, "output": 0, "cache_read": 0}},
-        "grok-code": {"cost": {"input": 0, "output": 0}},   # cost=0 但名字不带 free
-        "big-pickle": {"cost": {}},                          # 空 cost 视为未知, 不收录
-        "grok-4.5": {"cost": 2},
-    }}}
+def test_fetch_zen_free_models_parses(monkeypatch):
+    """从 zen 上游 /v1/models 目录提取免费档: 只收 id 尾部 -free; 付费绝不收录。"""
+    payload = {"object": "list", "data": [
+        {"id": "deepseek-v4-flash-free", "object": "model"},
+        {"id": "hy3-free", "object": "model"},
+        {"id": "glm-5", "object": "model"},
+        {"id": "claude-opus-5", "object": "model"},
+        {"id": "big-pickle", "object": "model"},    # 非 -free 结尾一律不碰
+    ]}
     monkeypatch.setattr(zen_sources.httpx, "get", lambda *a, **k: _FakeResp(payload))
     got = zen_sources.fetch_zen_free_models()
-    assert "deepseek-v4-flash-free" in got
-    assert "hy3-free" in got
-    assert "grok-code" in got                    # 价格全 0 → 免费(即使名字不带 free)
-    assert "glm-5" not in got and "grok-4.5" not in got   # 有价格 → 绝不收录
-    assert "big-pickle" not in got               # cost 信息缺失 → 不冒险收录
+    assert got == ["deepseek-v4-flash-free", "hy3-free"]
+    assert "glm-5" not in got and "claude-opus-5" not in got and "big-pickle" not in got
+
+
+def test_fetch_zen_free_models_upstream_down(monkeypatch):
+    """上游目录拉取失败 → 空列表, 不抛异常(交由探测全灭保护兜底)。"""
+    def boom(*a, **k):
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(zen_sources.httpx, "get", boom)
+    assert zen_sources.fetch_zen_free_models() == []
 
 
 class _FakeResp:

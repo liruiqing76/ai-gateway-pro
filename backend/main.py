@@ -150,7 +150,8 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(180)  # 等服务稳定
         while True:
             try:
-                r = sync_zen_free_models()
+                # 同步含网络探测: 放后台线程, 避免阻塞事件循环卡死网关
+                r = await asyncio.to_thread(sync_zen_free_models)
                 logger.info("opencode 免费模型同步: 发现%d个, 可用%d个, 不可用%d",
                             r.get("total_free", 0), len(r.get("usable", [])),
                             len(r.get("unusable", {})))
@@ -164,7 +165,7 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(480)  # 首次健康检测等同步完成后
         while True:
             try:
-                r = health_check_zen_models()
+                r = await asyncio.to_thread(health_check_zen_models)
                 if r.get("removed"):
                     logger.info("opencode 健康检测: 移出不可用模型 %s", r["removed"])
             except Exception as e:

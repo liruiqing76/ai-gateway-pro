@@ -3,6 +3,7 @@
 # 用户渠道 CRUD + 系统预设模板 + 一键添加
 # ============================================================
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -441,14 +442,17 @@ async def fetch_models(
     """用表单中的 URL+Key 实时拉取上游模型列表(不落库)"""
     if _is_zen_channel(data.base_url):
         # opencode zen: /v1/models 是 63 个全量(无 pricing), 通用拉取会
-        # 把付费模型也列出来。改为 models.dev 免费档 + 真探测, 只显示
-        # 实测可用的免费模型。
-        free = zen_sources.fetch_zen_free_models()
-        if not free:
-            raise HTTPException(status_code=502,
-                                detail="未能获取 opencode 免费模型列表(models.dev)")
-        results = zen_sources.probe_many(free)
-        models = [m for m, (ok, _) in results.items() if ok]
+        # 把付费模型也列出来。改为只取目录里 -free 结尾的免费档并真探测,
+        # 只显示实测可用。探测是同步网络调用, 放后台线程避免阻塞事件循环;
+        # 短超时(10s)保证按钮体验, 残缺结果由定时同步/健康检测补全。
+        def _curate_zen():
+            free = zen_sources.fetch_zen_free_models()
+            if not free:
+                raise HTTPException(status_code=502,
+                                    detail="未能获取 opencode 免费模型列表")
+            results = zen_sources.probe_many(free, timeout=10.0)
+            return [m for m, (ok, _) in results.items() if ok]
+        models = await asyncio.to_thread(_curate_zen)
     else:
         models = await fetch_upstream_models(data.base_url, data.api_key,
                                              free_only=data.free_only)
@@ -484,8 +488,9 @@ async def refresh_provider_models(
     """重新拉取上游模型并更新库中渠道, 同时重建路由组
 
     opencode zen 渠道特殊处理: 上游 /v1/models 返回全量 63 个模型且无
-    pricing 字段, 通用免费过滤会全部保留, 因此走 models.dev 免费档 +
-    真探测的策展路径(与定时自动同步同一套逻辑), 只落实测可用的免费模型。
+    pricing 字段, 通用免费过滤会全部保留, 因此走 zen 策展路径(与定时自动
+    同步同一套逻辑): 目录里 -free 结尾的免费档 → 真探测 → 只落实测可用。
+    同步在后台线程执行, 不阻塞事件循环; 探测全灭时保留现有模型不清空。
     """
     session = get_session()
     try:
@@ -493,7 +498,9 @@ async def refresh_provider_models(
         if not p:
             raise HTTPException(status_code=404, detail="渠道不存在")
         if _is_zen_channel(p.base_url):
-            result = zen_sources.sync_zen_free_models()
+            # 同步/探测是阻塞网络调用: 放后台线程执行, 与定时同步任务共用
+            # _lock 天然串行, 事件循环不再被探测时间卡死(网关全程可响应)
+            result = await asyncio.to_thread(zen_sources.sync_zen_free_models, 10.0)
             if not result.get("ok"):
                 raise HTTPException(status_code=502, detail=result.get(
                     "error", "opencode 免费模型同步失败"))
