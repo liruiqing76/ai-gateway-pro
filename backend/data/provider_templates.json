@@ -187,5 +187,27 @@
       "AMD",
       "DeepSeek"
     ]
+  },
+  {
+    "name": "Nous Portal (免费)",
+    "base_url": "https://inference-api.nousresearch.com/v1",
+    "models": [
+      "stealth/ox-alpha",
+      "poolside/laguna-s-2.1:free",
+      "poolside/laguna-xs-2.1:free",
+      "tencent/hy3:free",
+      "stepfun/step-3.7-flash:free",
+      "upstage/solar-pro4:free",
+      "meituan/longcat-2.0:free"
+    ],
+    "free_only": true,
+    "signup_url": "https://portal.nousresearch.com",
+    "config_url": "https://portal.nousresearch.com",
+    "notes": "Nous Research 官方免费模型（Free 计划）。需在 portal.nousresearch.com 免费注册账号后获取 API Key（Hermes 作者团队实测可用，工具调用正常）。模型名以官方目录为准，可能轮换。",
+    "tags": [
+      "免费",
+      "Nous",
+      "通用"
+    ]
   }
 ]
