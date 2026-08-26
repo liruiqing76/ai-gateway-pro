@@ -120,11 +120,15 @@ def _chunk_chats(chats, size: int):
 
 
 async def _distill_one_chunk(user_id: int, chats) -> int:
+    from backend.core import chat_archive
     transcript = []
     for c in chats:
+        # 输入只取尾部采样: agent/完整上下文场景下, 前几百字符全是固定
+        # system 提示词(每条记录都一样), 提炼出来全是"模型基线验证"类
+        # 通用废话。真实交互在消息末尾, 预览列的尾段正好是它。
         transcript.append(f"### 请求(模型 {c.original_model or '?'})\n"
-                          f"输入: {(c.prompt_text or '')[:800]}\n"
-                          f"输出: {(c.completion_text or '')[:800]}")
+                          f"输入: {chat_archive.tail_of(c.prompt_text or '', 2000)}\n"
+                          f"输出: {(c.completion_text or '')[:2000]}")
     prompt = (
         "你是经验提炼助手。请从下面若干次 AI 对话中提炼出可复用的经验(lesson)/事实(fact)/标准流程(sop)。\n"
         "每条经验输出格式为严格的 JSON 数组，每个元素含 kind(lesson|fact|sop)、title(简短标题)、content(2-4句可复用经验)。\n"
@@ -279,10 +283,14 @@ async def summarize_daily(user_id: int, day: str = None) -> Optional[dict]:
 
 
 async def _llm_daily_summary(day: str, chats) -> str:
+    from backend.core import chat_archive
     transcript = []
     for c in chats[:50]:
         status = "成功" if c.success else f"失败({c.error_msg or '?'})"
-        transcript.append(f"- [{status}] {c.original_model}: 输入『{(c.prompt_text or '')[:300]}』 → 输出『{(c.completion_text or '')[:300]}』")
+        transcript.append(
+            f"- [{status}] {c.original_model}: "
+            f"输入『{chat_archive.tail_of(c.prompt_text or '', 500)[:300]}』"
+            f" → 输出『{(c.completion_text or '')[:300]}』")
     prompt = (
         f"请总结 {day} 这一天的 AI 对话经验与教训。\n"
         f"要求输出包含: 1) 今日概览 2) 成功经验 3) 失败教训 4) 明日建议。\n"

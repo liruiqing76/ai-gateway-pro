@@ -195,8 +195,14 @@ def save_chat_log(
         return None
     try:
         from backend.models import get_session, ChatLog
+        from backend.core import chat_archive
         pc = len(prompt_text or "")
         cc = len(completion_text or "")
+        # 原文外置: 长 prompt(完整上下文/图片 base64)不再进 DB,
+        # gzip 按月归档, 库内只留"头+尾预览"。归档写入失败回落存原文, 不丢数据。
+        prompt_archive = None
+        if chat_archive.needs_external(prompt_text):
+            prompt_archive = "__pending__"  # 先占位, flush 拿 id 后写文件再落值
         record = ChatLog(
             user_id=user_id,
             request_id=request_id,
@@ -217,10 +223,21 @@ def save_chat_log(
             latency_ms=latency_ms,
             success=success,
             error_msg=error_msg,
+            prompt_archive=prompt_archive,
         )
         session = get_session()
         try:
             session.add(record)
+            session.flush()  # 先拿自增 id, 归档行需要带 id 才能读回
+            if prompt_archive == "__pending__":
+                import datetime as _dt
+                ts = record.created_at or _dt.datetime.now()
+                if chat_archive.append_prompt(record.id, ts, prompt_text):
+                    record.prompt_text = chat_archive.make_preview(prompt_text)
+                    record.prompt_archive = ts.strftime("%Y-%m")
+                else:
+                    # 归档失败: 原文留库, 标记为未外置(下次迁移脚本可补)
+                    record.prompt_archive = None
             session.commit()
         finally:
             session.close()

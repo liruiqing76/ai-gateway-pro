@@ -56,6 +56,8 @@ logger = logging.getLogger("gateway")
 async def lifespan(app: FastAPI):
     """启动/关闭钩子"""
     create_tables()  # 幂等建表: 全新数据库首次启动时补齐所有表
+    from backend.core.chat_archive import ensure_archive_column
+    ensure_archive_column()  # 为旧库补 prompt_archive 列(聊天原文外置归档用)
     logger.info("智能网关 启动中...")
 
     # 启动后台测速轮询任务

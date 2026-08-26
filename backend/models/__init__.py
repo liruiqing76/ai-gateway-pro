@@ -271,8 +271,9 @@ class ChatLog(Base):
     model_name = Column(String(128), nullable=True)      # 实际命中模型
 
     # 请求/回复全文
-    prompt_text = Column(Text, nullable=True)            # 输入 messages 拼接文本
-    completion_text = Column(Text, nullable=True)        # 输出全文(失败时为空)
+    prompt_text = Column(Text, nullable=True)   # 原文外置后为"头+尾预览"(全文在归档文件)
+    completion_text = Column(Text, nullable=True)  # 输出全文(失败时为空)
+    prompt_archive = Column(String(16), nullable=True)  # 原文归档月份 "YYYY-MM", NULL=未外置
 
     # 长度统计(字符数)
     prompt_chars = Column(Integer, default=0)

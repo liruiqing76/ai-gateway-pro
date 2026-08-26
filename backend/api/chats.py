@@ -205,8 +205,15 @@ def _row_summary(r: ChatLog, prompt_head: str | None = None) -> dict:
 
 
 def _row_detail(r: ChatLog) -> dict:
-    """详情: 含全文"""
+    """详情: 含全文。prompt 已归档的行从归档文件读回原文,
+    读不到(文件缺失/损坏)时回落预览, 不丢查看能力。"""
+    from backend.core import chat_archive
     d = _row_summary(r)
-    d["prompt_text"] = r.prompt_text
+    if r.prompt_archive and r.created_at:
+        full = chat_archive.read_prompt(r.id, r.created_at)
+        d["prompt_text"] = full if full is not None else r.prompt_text
+        d["prompt_archived"] = r.prompt_archive
+    else:
+        d["prompt_text"] = r.prompt_text
     d["completion_text"] = r.completion_text
     return d
