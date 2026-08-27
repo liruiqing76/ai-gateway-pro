@@ -62,3 +62,4 @@ backend/data/*.bak*
 /build_dist_tmp/
 /dist_build/
 /agnes_cat_frame.jpg
+desktop/checkin/detect_cache.json
