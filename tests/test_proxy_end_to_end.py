@@ -268,6 +268,11 @@ class TestTraceRecording:
     def test_stats_aggregates(self, env, monkeypatch):
         client, ctx = env
         import backend.api.proxy as proxy_mod
+        from backend.config import settings
+
+        # group1 有 a1/b1 两个候选, 轮询会让 3 次请求轮转到不同模型;
+        # 本测试专注统计聚合, 关掉轮询让 3 次都落在 model-a1
+        monkeypatch.setattr(settings, "ROUND_ROBIN_ENABLED", False)
 
         async def fake_forward(http_client, provider, api_key, model, body):
             return ok_resp(), None

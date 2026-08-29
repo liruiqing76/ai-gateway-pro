@@ -15,6 +15,7 @@
 """
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -23,17 +24,68 @@ import httpx
 
 logger = logging.getLogger("gateway")
 
+# 内置资源目录: 源码模式 = backend/data; 打包 onefile 模式 = 临时解压目录里的
+# backend/data(ai_gateway_pro.spec 显式打进 .json 静态资源)。仅作 seed 基线,
+# 运行时禁止写回此路径(onefile 退出即销毁, 写回会丢)。
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-TEMPLATES_FILE = DATA_DIR / "provider_templates.json"
-SOURCES_FILE = DATA_DIR / "free_sources.json"
+BUILTIN_TEMPLATES_FILE = DATA_DIR / "provider_templates.json"
+BUILTIN_SOURCES_FILE = DATA_DIR / "free_sources.json"
+# 兼容旧引用(指向内置基线)
+TEMPLATES_FILE = BUILTIN_TEMPLATES_FILE
+SOURCES_FILE = BUILTIN_SOURCES_FILE
 
 _sync_lock = threading.Lock()
 _runtime_state = {"last_sync_at": None, "last_result": None}  # 内存态, 供 /api/free-sources 展示
 
 
+def runtime_data_dir() -> Path:
+    """持久化数据目录: 桌面模式(GW_DB_PATH)用 exe 旁的 data/ 与 gateway.db 同级;
+    源码模式退回内置 DATA_DIR。模板/免费源配置在此读写, 重启不丢且同步可写回。"""
+    gw = os.environ.get("GW_DB_PATH")
+    if gw:
+        d = Path(gw).resolve().parent
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return DATA_DIR
+
+
+def runtime_templates_file() -> Path:
+    return runtime_data_dir() / "provider_templates.json"
+
+
+def runtime_sources_file() -> Path:
+    return runtime_data_dir() / "free_sources.json"
+
+
+def _seed_from_builtin(dst: Path, builtin: Path) -> bool:
+    """持久化文件缺失时从打包内置基线拷一份(首次启动 seed)。返回是否新建。
+    builtin 不存在(打包漏带静态资源)时静默返回 False, 由调用方 load 返回 [] 兜底, 不崩。"""
+    if dst.exists() or not builtin.exists():
+        return False
+    try:
+        import shutil
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(builtin), str(dst))
+        logger.info("seed 持久化资源 %s <- 内置基线", dst.name)
+        return True
+    except Exception as e:
+        logger.warning("seed %s 失败: %s", dst, e)
+        return False
+
+
+def ensure_runtime_assets() -> None:
+    """启动/首次读取前确保持久化模板与免费源配置存在(从内置基线 seed)。
+    桌面打包版: 把 spec 打进包的内置 .json 拷到 exe 旁 data/, 保证模板一键添加可用。"""
+    _seed_from_builtin(runtime_templates_file(), BUILTIN_TEMPLATES_FILE)
+    _seed_from_builtin(runtime_sources_file(), BUILTIN_SOURCES_FILE)
+
+
 def load_templates(templates_path: Path = None) -> list:
-    """读取本地模板池(内置免费厂商清单)。"""
-    path = templates_path or TEMPLATES_FILE
+    """读取本地模板池。默认读持久化运行时文件(桌面模式 = exe 旁 data/),
+    缺失时先从内置基线 seed 一次; 显式传 templates_path 时(测试用)直接读它。"""
+    path = templates_path or runtime_templates_file()
+    if not path.exists() and not templates_path:
+        _seed_from_builtin(path, BUILTIN_TEMPLATES_FILE)
     if not path.exists():
         return []
     try:
@@ -45,7 +97,9 @@ def load_templates(templates_path: Path = None) -> list:
 
 def load_source_config(sources_path: Path = None) -> dict:
     """读取外部免费源配置 {sources: [{name,url,enabled}], meta: {...}}。"""
-    path = sources_path or SOURCES_FILE
+    path = sources_path or runtime_sources_file()
+    if not path.exists() and not sources_path:
+        _seed_from_builtin(path, BUILTIN_SOURCES_FILE)
     if not path.exists():
         return {"sources": [], "meta": {}}
     try:
@@ -56,7 +110,7 @@ def load_source_config(sources_path: Path = None) -> dict:
 
 
 def save_source_config(cfg: dict, sources_path: Path = None):
-    path = sources_path or SOURCES_FILE
+    path = sources_path or runtime_sources_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -138,7 +192,7 @@ def sync_free_sources(templates_path: Path = None, sources_path: Path = None) ->
                 logger.warning("免费源 %s 拉取失败: %s", name, e)
 
         # 写回模板池(仅当有新内容或外部源配置存在时也刷新 meta)
-        path = templates_path or TEMPLATES_FILE
+        path = templates_path or runtime_templates_file()
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(pool, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(path)

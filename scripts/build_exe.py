@@ -88,6 +88,22 @@ def stage() -> None:
             n += _copy_tree(src, STAGING / sub)
     print(f"[2] 已复制源码树 {n} 个文件")
 
+    # backend/data/ 整目录被 _skip_dir("data") 跳过, 但其中的静态资源配置
+    # (模板池 provider_templates.json / 免费源配置 free_sources.json) 必须进包
+    # —— 模板一键添加依赖它, 且运行时首次启动会从内置基线 seed 到持久化目录。
+    # 其余 db/日志/备份(用户运行数据)一律不进 staging。
+    _STATIC_DATA_FILES = [
+        "backend/data/provider_templates.json",
+        "backend/data/free_sources.json",
+    ]
+    for rel in _STATIC_DATA_FILES:
+        srcf = BASE / rel
+        dstf = STAGING / rel
+        if srcf.exists():
+            dstf.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(srcf), str(dstf))
+            print(f"    静态资源进 staging: {rel}")
+
     shutil.copy2(SETUP_TEMPLATE, STAGING / "setup_cython.py")
     print(f"[3] 开始 Cython 编译 20 个核心模块...")
     r = subprocess.run(

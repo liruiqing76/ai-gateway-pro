@@ -479,16 +479,13 @@ class TestFetchUpstreamErrors:
     def test_apply_template_fetch_error_not_blocking(self, auth_headers, monkeypatch):
         """模板模型为空时拉取失败 → 模板仍应用(空模型列表)"""
         import backend.api.providers as pm
-        import json
-        from pathlib import Path
 
-        # 用临时模板文件: 该模板无预设模型 → 触发自动拉取
-        tmp_tpl = Path(__file__).parent / "tmp_tpl.json"
-        tmp_tpl.write_text(json.dumps([
+        # 用临时模板: 无预设模型 → 触发自动拉取(load_templates 已委托 free_sources,
+        # 直接替换 providers 模块内的 load_templates 返回该模板)
+        monkeypatch.setattr(pm, "load_templates", lambda: [
             {"name": "EmptyModelTPL", "base_url": "https://empty.example/v1",
              "models": [], "free_only": True}
-        ]), encoding="utf-8")
-        monkeypatch.setattr(pm, "TEMPLATES_FILE", tmp_tpl)
+        ])
 
         async def fail_get(base_url, api_key, free_only=False):
             raise HTTPException(status_code=502, detail="拉取模型失败: 超时")
@@ -498,10 +495,6 @@ class TestFetchUpstreamErrors:
             "template_name": "EmptyModelTPL",
             "api_key": "key",
         }, headers=auth_headers)
-        try:
-            tmp_tpl.unlink()
-        except OSError:
-            pass
         assert resp.status_code == 200
         assert resp.json()["models_count"] == 0
 

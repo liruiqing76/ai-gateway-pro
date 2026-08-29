@@ -6,7 +6,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, Float, Boolean,
-    DateTime, ForeignKey, JSON, create_engine
+    DateTime, ForeignKey, JSON, create_engine, UniqueConstraint, Index
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 from pathlib import Path
@@ -347,6 +347,66 @@ class ModelSpeedLog(Base):
     available = Column(Boolean, default=False)
     error_msg = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+# ============================================================
+# 免费模型搜索 - 帖子表
+# ============================================================
+class FreeModelPost(Base):
+    __tablename__ = "free_model_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source = Column(String(32), nullable=False, index=True)  # gitee, github, baidu, toutiao, wechat
+    url = Column(String(512), nullable=False)
+    title = Column(String(256), nullable=False)
+    author = Column(String(128), nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    raw_html_path = Column(String(512), nullable=True)  # 保存原始HTML的路径
+    content_snippet = Column(Text, nullable=True)  # 抽取的内容片段
+    hash_key = Column(String(64), nullable=False, index=True)  # 用于去重的哈希键
+    
+    # 复合唯一索引防止同一来源同一URL重复
+    __table_args__ = (
+        UniqueConstraint('source', 'url', name='uix_free_model_post_source_url'),
+    )
+
+
+# ============================================================
+# 免费模型搜索 - 报告表
+# ============================================================
+class FreeModelReport(Base):
+    __tablename__ = "free_model_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    post_ids = Column(JSON, nullable=False)  # 关注的post ID列表
+    summary = Column(Text, nullable=True)  # LLM生成的摘要
+    feasibility_score = Column(Float, nullable=True)  # 平均可行性得分 1-5
+    truthfulness_score = Column(Float, nullable=True)  # 平均真实性得分 1-5
+    status = Column(String(16), default="completed")  # running, completed, failed
+    finished_at = Column(DateTime, nullable=True)
+    file_path = Column(String(512), nullable=True)  # 报告文件保存路径
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+
+# ============================================================
+# 免费模型搜索 - 评估表
+# ============================================================
+class FreeModelEvaluation(Base):
+    __tablename__ = "free_model_evaluations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_id = Column(Integer, ForeignKey("free_model_reports.id"), nullable=False, index=True)
+    post_id = Column(Integer, ForeignKey("free_model_posts.id"), nullable=False, index=True)
+    feasibility_score = Column(Integer, nullable=False)  # 1-5分
+    truthfulness_score = Column(Integer, nullable=False)  # 1-5分
+    reason = Column(Text, nullable=True)  # 评估原因
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    
+    # 关系定义
+    report = relationship("FreeModelReport", backref="evaluations")
+    post = relationship("FreeModelPost", backref="evaluations")
 
 
 # ============================================================

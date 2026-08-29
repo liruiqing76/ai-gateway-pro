@@ -15,10 +15,19 @@ WEB_DIR = BASE / 'web'
 
 def collect_source_tree(src, dst):
     """源码目录进包, 但剔除运行时垃圾: __pycache__/数据库及备份/签到截图缓存/日志。
-    数据库属于用户机器上的运行数据, 打进安装包既泄密又白占体积。"""
+    数据库属于用户机器上的运行数据, 打进安装包既泄密又白占体积。
+
+    注意 backend/data/ 不能整目录排除: 该目录同时放静态资源
+    provider_templates.json / free_sources.json(模板一键添加依赖), 必须打进包。
+    因此对该目录改为"只收这两个 .json, 排除 db/-shm/-wal/备份/搜索结果"的精筛。"""
     exclude_rel_prefixes = tuple(p.replace('\\', '/')
-                                 for p in ('backend/data/', 'desktop/checkin/shots/',
+                                 for p in ('desktop/checkin/shots/',
                                            'desktop/logs/', 'logs/'))
+    # backend/data/ 下只保留两个静态配置资源; 其余(数据库 gateway.db 及 -shm/-wal/
+    # 备份, free_models/ 搜索结果运行数据)全部排除, 避免泄密与白占体积
+    DATA_REL_PREFIX = 'backend/data/'
+    DATA_KEEP = ('backend/data/provider_templates.json',
+                 'backend/data/free_sources.json')
     out = []
     for root, dirs, files in os.walk(src):
         dirs[:] = [d for d in dirs if d not in ('__pycache__', '.pytest_cache',
@@ -27,9 +36,12 @@ def collect_source_tree(src, dst):
             rel = (Path(root) / f).relative_to(src).as_posix()
             if rel.startswith(exclude_rel_prefixes):
                 continue
+            if rel.startswith(DATA_REL_PREFIX) and rel not in DATA_KEEP:
+                continue
             # .pyd 不排除(混淆构建靠它交付编译模块); .c/.obj 等编译中间产物排除
+            # db 类(含 -shm/-wal/备份, '.db' 子串覆盖全家族)排除
             if f.endswith(('.pyc', '.log', '.c', '.obj', '.exp', '.lib', '.o')) \
-                    or f.endswith('.db') or '.db.bak' in f:
+                    or '.db' in f:
                 continue
             parent = os.path.dirname(rel)
             out.append((str(Path(src) / rel), str(Path(dst) / parent) if parent else dst))

@@ -4,9 +4,7 @@
 # ============================================================
 
 import asyncio
-import json
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
@@ -14,15 +12,12 @@ from pydantic import BaseModel, Field
 from backend.auth.middleware import get_current_user_from_jwt
 from backend.auth.security import encrypt_secret, decrypt_secret, mask_secret
 from backend.core.proxy import get_context_length
-from backend.core import zen_sources
+from backend.core import zen_sources, free_sources
 from backend.models import get_session, User, Provider, ProviderTemplate, Router, ModelSpeedLog
 
 logger = logging.getLogger("gateway.providers")
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
-
-# 预设模板文件
-TEMPLATES_FILE = Path(__file__).parent.parent / "data" / "provider_templates.json"
 
 
 # ============================================================
@@ -49,9 +44,9 @@ class ProviderUpdate(BaseModel):
 # 读取预设模板
 # ============================================================
 def load_templates() -> list[dict]:
-    if TEMPLATES_FILE.exists():
-        return json.loads(TEMPLATES_FILE.read_text(encoding="utf-8"))
-    return []
+    """读取预设模板池。委托 free_sources: 走持久化运行时路径(exe 旁 data/),
+    缺失时从打包内置基线 seed, 保证桌面版模板一键添加能列出模板。"""
+    return free_sources.load_templates()
 
 
 # ============================================================
@@ -680,7 +675,7 @@ async def check_all_models(
                 payload = {
                     "model": group_name,
                     "messages": [{"role": "user", "content": "hi"}],
-                    "max_tokens": 1,
+                    "max_tokens": 8,
                 }
                 start = time.time()
                 available = False
@@ -796,7 +791,7 @@ async def _do_speed_check(user_id: int):
                 payload = {
                     "model": group_name,
                     "messages": [{"role": "user", "content": "hi"}],
-                    "max_tokens": 1,
+                    "max_tokens": 8,
                 }
                 start = time.time()
                 available = False

@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     CIRCUIT_FAIL_THRESHOLD: int = 3
     CIRCUIT_RECOVERY_SECONDS: int = 60
     QUALITY_WINDOW: int = 20
+    # 轮询模式: 候选模型轮流使用, 避免逮着同一个模型把单一上游额度/限流打爆
+    ROUND_ROBIN_ENABLED: bool = True
     POLL_INTERVAL: int = 300
     MAX_CONCURRENT_POLLS: int = 10
     # 代理转发超时(秒) — 每个上游模型尝试的最长时间
@@ -114,6 +116,23 @@ class Settings(BaseSettings):
     EXPERIENCE_DISTILL_LIMIT: int = 40
     # 每日总结保留最近天数
     EXPERIENCE_KEEP_DAYS: int = 90
+
+    # ---- 免费模型帖子搜索(每日定时) ----
+    # 定时爬取 Gitee/GitHub/百度/今日头条/微信公众号上"免费模型注册"相关帖子,
+    # 入库 + LLM 评估可行性/真实性 + 生成 Markdown 报告(落盘 + 数据库)。
+    FREE_MODEL_SEARCH_ENABLED: bool = True
+    # 每天执行时间(HH:MM), 默认 23:00
+    FREE_MODEL_SEARCH_TIME: str = "23:00"
+    # 启动后延迟多少秒再首次运行(让服务稳定)
+    FREE_MODEL_SEARCH_START_DELAY: int = 300
+    # 每个来源每次搜索的关键词数量上限(避免单次请求过大)
+    FREE_MODEL_SEARCH_PER_SOURCE_LIMIT: int = 15
+    # 是否对帖子做 LLM 评估(可行性/真实性打分)
+    FREE_MODEL_EVALUATION_ENABLED: bool = True
+    # 搜索来源开关
+    FREE_MODEL_SEARCH_SOURCES: list = [
+        "gitee", "github", "baidu", "toutiao", "wechat"
+    ]
 
 
 settings = Settings()

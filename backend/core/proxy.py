@@ -18,6 +18,34 @@ from backend.models import Provider
 
 logger = logging.getLogger("gateway.proxy")
 
+# 配额/余额耗尽类 429(insufficient_quota / insufficient balance / entitlement)——
+# 短期不会自动恢复(充值/重置额度前一直失败), 触发比一般限流更长的冷却;
+# 一般限流(过载/被限)仍走指数退避 30s→300s。
+_QUOTA_HINTS = ("insufficient_quota", "quota", "balance", "entitlement", "额度", "余额")
+
+
+def _is_quota_error(text: str) -> bool:
+    """429 响应体是否属于配额/余额耗尽(而非瞬时过载限流)。"""
+    t = (text or "").lower()
+    return any(h in t for h in _QUOTA_HINTS)
+
+# 轮询计数器: 同一组/模型的候选列表每次请求整体轮转一位,
+# 让"最快/质量最高"的模型不再独吞全部流量(单一上游额度/限流被打爆的根源)。
+_round_robin_counter: dict[str, int] = {}
+
+
+def _rotate_candidates(scored: list, key: str) -> list:
+    """把健康候选按轮询计数器旋转, 熔断中的候选保持排最后。"""
+    if len(scored) <= 1:
+        return scored
+    healthy = [x for x in scored if not x[5]]
+    broken = [x for x in scored if x[5]]
+    if not healthy:
+        return scored
+    idx = _round_robin_counter.get(key, 0) % len(healthy)
+    _round_robin_counter[key] = idx + 1
+    return healthy[idx:] + healthy[:idx] + broken
+
 
 # ============================================================
 # 模型选择: 按质量评分排序候选
@@ -88,7 +116,7 @@ def pick_available_models(
                         fallback.append((p, m, k))
         if not raw:
             raw = fallback
-        scored = _sort_by_strategy(raw, strategy)
+        scored = _sort_by_strategy(raw, strategy, rr_key=f"{group_key}:{strategy}")
         return [(p, m) for p, m, _ in scored]
 
     # 2. 具体模型
@@ -109,7 +137,9 @@ def pick_available_models(
         raw = fallback
 
     # 按质量分排序
-    scored = _sort_by_strategy(raw, strategy)
+    scored = _sort_by_strategy(
+        raw, strategy, rr_key=f"{requested_model or 'any'}:{strategy}"
+    )
     return [(p, m) for p, m, _ in scored]
 
 
@@ -147,13 +177,18 @@ async def forward_non_stream(
 
         if resp.status_code >= 400:
             logger.warning("upstream %d from %s: %s", resp.status_code, provider.name, resp.text[:200])
-            # 429/限流 → 冷却(指数退避)
+            quality_tracker.record(key, "fail", latency)
+            # 429: 配额/余额耗尽走长效冷却, 一般限流走指数退避; 不再叠加 record_fail
+            # (record_fail 会以 60s 覆盖掉刚才设置的更长冷却, 让配额冷却形同虚设)
             if resp.status_code == 429:
-                circuit_breaker.record_rate_limit(key)
+                if _is_quota_error(resp.text):
+                    circuit_breaker.record_quota_exhausted(key)
+                else:
+                    circuit_breaker.record_rate_limit(key)
             # 其他 4xx 是确定性失败(上下文超限/不支持字段/鉴权等), 同样计入熔断:
             # 只对 429 记录会导致确定性 400 每次请求都原样重试, 慢请求反复烧时间
-            circuit_breaker.record_fail(key)
-            quality_tracker.record(key, "fail", latency)
+            else:
+                circuit_breaker.record_fail(key)
             return None, f"upstream {resp.status_code}"
 
         try:
@@ -162,13 +197,19 @@ async def forward_non_stream(
             # 是致命"假成功"(客户端只能拿空消息重试), 视为失败换下一个候选。
             # 有 tool_calls/function_call 的纯工具响应是合法的, 不算空。
             has_payload = False
+            has_reasoning = False
             for ch in data.get("choices") or []:
                 msg = ch.get("message") or {}
                 if (msg.get("content") or "").strip() \
                         or msg.get("tool_calls") or msg.get("function_call"):
                     has_payload = True
                     break
-            if not has_payload:
+                # 推理模型(deepseek-v4-flash / glm-5.2 等)先吐 reasoning_content、
+                # content 为空的响应是合法输出, 不是"假成功", 不能误判为空回复
+                # (否则 record_fail 会把健康候选连坐熔断/降权)。
+                if (msg.get("reasoning_content") or "").strip():
+                    has_reasoning = True
+            if not has_payload and not has_reasoning:
                 logger.warning("upstream %s returned empty response (no content/tool_calls): %s",
                                provider.name, resp.text[:120])
                 circuit_breaker.record_fail(key)
@@ -266,8 +307,15 @@ async def forward_stream(
             err_msg = ""
         await resp.aclose()
         logger.warning("upstream stream error %d from %s: %s", resp.status_code, provider.name, err_msg[:200])
-        circuit_breaker.record_fail(key)
         quality_tracker.record(key, "fail")
+        # 429 同样区分配额耗尽(长效冷却)与一般限流(指数退避); 5xx 与其他 4xx 走普通熔断
+        if resp.status_code == 429:
+            if _is_quota_error(err_msg):
+                circuit_breaker.record_quota_exhausted(key)
+            else:
+                circuit_breaker.record_rate_limit(key)
+        else:
+            circuit_breaker.record_fail(key)
         return None, f"upstream {resp.status_code}"
 
     # 连接成功,创建共享迭代器避免重复消费httpx流
@@ -313,7 +361,8 @@ async def forward_stream(
                     for ch in obj.get("choices") or []:
                         delta = ch.get("delta") or ch.get("message") or {}
                         if (delta.get("content") or "").strip() \
-                                or delta.get("tool_calls") or delta.get("function_call"):
+                                or delta.get("tool_calls") or delta.get("function_call") \
+                                or (delta.get("reasoning_content") or "").strip():
                             got_content = True
                             break
                     stream_ok = True
@@ -403,8 +452,9 @@ def get_context_length(model: str) -> int:
 def _sort_by_strategy(
     raw: list,
     strategy: str = "quality",
+    rr_key: str | None = None,
 ) -> list:
-    """按策略排序候选列表: quality / fastest / stable"""
+    """按策略排序候选列表: quality / fastest / stable。rr_key 非空时轮询旋转健康候选。"""
     from backend.core.scheduler import quality_tracker
     from backend.core.circuit import circuit_breaker
 
@@ -428,6 +478,9 @@ def _sort_by_strategy(
     else:  # quality (默认)
         # 质量分最高优先, 同分按延迟, 再按声明顺序(组序/渠道序)
         scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4], x[6]))
+
+    if settings.ROUND_ROBIN_ENABLED and rr_key:
+        scored = _rotate_candidates(scored, rr_key)
 
     return [(p, m, k) for p, m, k, _, _, _, _ in scored]
 

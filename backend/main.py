@@ -33,6 +33,7 @@ from backend.api.requests import router as requests_router
 from backend.api.license import router as license_router
 from backend.api.experience import router as experience_router
 from backend.api.free_sources import router as free_sources_router
+from backend.api.free_model_search import router as free_model_search_router
 
 # 日志: 控制台 + 文件(exe 打包后 windowed 无 stderr, 500 堆栈只能靠文件日志排查)
 _LOG_ROOT = (Path(os.environ.get("GW_DB_PATH", "")).resolve().parent.parent
@@ -58,6 +59,9 @@ async def lifespan(app: FastAPI):
     create_tables()  # 幂等建表: 全新数据库首次启动时补齐所有表
     from backend.core.chat_archive import ensure_archive_column
     ensure_archive_column()  # 为旧库补 prompt_archive 列(聊天原文外置归档用)
+    # 首次启动 seed 持久化模板/免费源配置(从打包内置基线), 保证模板一键添加可用
+    from backend.core.free_sources import ensure_runtime_assets
+    ensure_runtime_assets()
     logger.info("智能网关 启动中...")
 
     # 启动后台测速轮询任务
@@ -131,7 +135,9 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(settings.FREE_SOURCE_SYNC_START_DELAY)
         while True:
             try:
-                r = sync_free_sources()
+                # sync_free_sources 内部用同步 httpx.get 拉外部源(每个最长 15s),
+                # 必须放后台线程: 裸跑在事件循环里会冻死所有接口(含模板一键添加)
+                r = await asyncio.to_thread(sync_free_sources)
                 logger.info(
                     "免费源同步完成: 模板%d个, 新增%s, 更新%s, 失败%s",
                     r["total_templates"], r["added"], r["updated"], r["failed_sources"],
@@ -173,6 +179,41 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("opencode 健康检测异常: %s", e)
             await asyncio.sleep(settings.ZEN_HEALTH_CHECK_MINUTES * 60)
+
+    # 免费模型帖子搜索: 每天定时爬取 Gitee/GitHub/百度/今日头条/微信公众号上
+    # "免费模型注册"相关帖子, 去重入库 + LLM 评估 + 生成 Markdown 报告。
+    from backend.core.free_model_search import run_free_model_search
+
+    async def _free_model_search_loop():
+        if not settings.FREE_MODEL_SEARCH_ENABLED:
+            logger.info("免费模型帖子搜索未启用")
+            return
+        await asyncio.sleep(settings.FREE_MODEL_SEARCH_START_DELAY)
+        while True:
+            try:
+                HH, MM = (settings.FREE_MODEL_SEARCH_TIME or "23:00").split(":")
+                target = int(HH) * 3600 + int(MM) * 60
+                now = int(datetime.now().hour) * 3600 + int(datetime.now().minute) * 60
+                delay = (target - now) % 86400
+                if delay == 0:
+                    delay = 86400
+                await asyncio.sleep(delay)
+                # 搜索含网络请求与 LLM 评估: 放后台线程, 避免阻塞事件循环
+                r = await asyncio.to_thread(
+                    run_free_model_search,
+                    None,  # keywords: 用默认
+                    settings.FREE_MODEL_SEARCH_SOURCES,
+                    settings.FREE_MODEL_SEARCH_PER_SOURCE_LIMIT,
+                    settings.FREE_MODEL_EVALUATION_ENABLED,
+                )
+                logger.info("免费模型搜索完成: 发现%s, 新增%s, 评估%s",
+                            r.get("total_found"), r.get("added"), r.get("evaluated"))
+            except Exception as e:
+                logger.warning("免费模型搜索异常: %s", e)
+                await asyncio.sleep(3600)  # 异常后等 1 小时再试
+                continue
+            # delay 已含"距下次 23:00 的秒数", 循环回到顶部会重新计算,
+            # 无需再额外 sleep 86400(否则会变成 48 小时间隔)
 
     # 每日额度重置: 魔搭等渠道按天发放免费额度, 每天 00:10 清空质量/熔断统计,
     # 让额度恢复的渠道自动重新参与路由(白天额度用尽则由熔断/排序自动绕开);
@@ -223,6 +264,7 @@ async def lifespan(app: FastAPI):
     quota_reset_task = asyncio.create_task(_daily_quota_reset_loop())
     zen_sync_task = asyncio.create_task(_zen_sync_loop())
     zen_health_task = asyncio.create_task(_zen_health_loop())
+    free_model_search_task = asyncio.create_task(_free_model_search_loop())
     yield
     speed_task.cancel()
     summary_task.cancel()
@@ -230,6 +272,7 @@ async def lifespan(app: FastAPI):
     zen_sync_task.cancel()
     zen_health_task.cancel()
     quota_reset_task.cancel()
+    free_model_search_task.cancel()
     try:
         await speed_task
         await summary_task
@@ -237,6 +280,7 @@ async def lifespan(app: FastAPI):
         await zen_sync_task
         await zen_health_task
         await quota_reset_task
+        await free_model_search_task
     except asyncio.CancelledError:
         pass
     logger.info("智能网关 已停止")
@@ -291,6 +335,7 @@ app.include_router(requests_router)
 app.include_router(license_router)
 app.include_router(experience_router)
 app.include_router(free_sources_router)
+app.include_router(free_model_search_router)
 
 
 @app.get("/")

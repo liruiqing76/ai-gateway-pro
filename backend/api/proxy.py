@@ -8,6 +8,7 @@ import json
 import time
 import logging
 import urllib.parse
+from typing import AsyncGenerator, Callable, Awaitable
 
 import httpx
 from sqlalchemy import text
@@ -293,6 +294,98 @@ def _fallback_pt_ct(prompt_text: str, completion_text: str):
     """上游没回传 usage 时的兜底估算(CJK 感知, 贴近官方计费口径)"""
     return (estimate_tokens_from_text(prompt_text or ""),
             estimate_tokens_from_text(completion_text or ""))
+
+
+def _stream_chunk_has_content(chunk: bytes) -> bool:
+    """流块是否携带有效内容(文本/工具调用/推理过程)——供流式空流检测用。
+
+    注: reasoning_content 也算内容: 推理模型先吐思考、content 为空的块是合法输出,
+    不能把整条流误判成 NVIDIA 式"200 但全程无内容"的空流。
+    """
+    try:
+        if not chunk.startswith(b"data: "):
+            return False
+        payload = chunk[6:].strip()
+        if not payload or payload == b"[DONE]":
+            return False
+        obj = json.loads(payload)
+    except Exception:
+        return False
+    for ch in obj.get("choices") or []:
+        delta = ch.get("delta") or ch.get("message") or {}
+        if (delta.get("content") or "").strip() \
+                or delta.get("tool_calls") or delta.get("function_call") \
+                or (delta.get("reasoning_content") or "").strip():
+            return True
+    return False
+
+
+async def _stream_with_fallback(
+    primary_gen,
+    remaining: list,
+    *,
+    forward_candidate: Callable[[object, str], Awaitable[tuple]],
+    candidate_available: Callable[[object, str], bool],
+) -> AsyncGenerator[bytes, None]:
+    """流式失败转移包装。
+
+    触发切换候选继续流的两种情况:
+      1) primary 提前断流(没发 [DONE]);
+      2) primary 正常结束(发了 [DONE])但全程无有效内容——NVIDIA 反复出现的
+         "200 OK 但空流" 伪成功, 不切换的话客户端只拿得到空回复。
+    任一情况都不转发该 [DONE], 改用 remaining 里的下一候选继续流。
+    forward_candidate(prov, mdl) -> (gen|None, err), candidate_available(prov, mdl) -> bool
+    """
+    done_sent = False
+    primary_has_content = False
+    try:
+        async for chunk in primary_gen:
+            if not primary_has_content and _stream_chunk_has_content(chunk):
+                primary_has_content = True
+            if b"[DONE]" in chunk:
+                done_sent = True
+                if not primary_has_content:
+                    logger.warning("stream primary ended empty (no content), switching candidate")
+                    done_sent = False
+                    break  # 不 yield 这个 [DONE], 落入候选转移
+                yield chunk
+                return
+            yield chunk
+    except Exception as e:
+        logger.warning("stream primary gen error: %s", e)
+
+    if done_sent:
+        return
+
+    # primary 断流/空流 → 尝试下一个候选
+    for fb_prov, fb_mdl in remaining:
+        if not candidate_available(fb_prov, fb_mdl):
+            continue
+        logger.info("stream fallback: switching to %s/%s", fb_prov.name, fb_mdl)
+        fb_gen, fb_err = await forward_candidate(fb_prov, fb_mdl)
+        if fb_gen is None:
+            logger.warning("stream fallback %s/%s also failed: %s", fb_prov.name, fb_mdl, fb_err)
+            continue
+        fb_has_content = False
+        try:
+            async for chunk in fb_gen:
+                if not fb_has_content and _stream_chunk_has_content(chunk):
+                    fb_has_content = True
+                if b"[DONE]" in chunk:
+                    done_sent = True
+                    if not fb_has_content:
+                        logger.warning("stream fallback %s/%s also empty, trying next", fb_prov.name, fb_mdl)
+                        done_sent = False
+                        break
+                    yield chunk
+                    return
+                yield chunk
+        except Exception as e:
+            logger.warning("stream fallback gen error: %s", e)
+
+    # 所有候选都用完了(或全部空流), 确保发 [DONE]
+    if not done_sent:
+        yield "data: [DONE]\n\n".encode()
 
 
 # 全局 httpx 客户端(复用连接池)
@@ -661,55 +754,17 @@ async def proxy_chat(
         if stream:
             resp, err = await forward_stream(client, provider, api_key, model, body)
             if resp is not None:
-                # 流式 fallback: 用包装生成器, 第一个候选断流时自动切换到下一个
-                async def _stream_with_fallback(primary_gen, remaining):
-                    """
-                    先 yield 完 primary_gen, 如果它没发 [DONE] 就提前结束,
-                    则用 remaining 里的下一个候选继续流。
-                    """
-                    done_sent = False
-                    try:
-                        async for chunk in primary_gen:
-                            yield chunk
-                            # 检测是否已发送 [DONE]
-                            if b"[DONE]" in chunk:
-                                done_sent = True
-                                return
-                    except Exception as e:
-                        logger.warning("stream primary gen error: %s", e)
-
-                    if done_sent:
-                        return
-
-                    # primary 没发 [DONE] 就结束了, 尝试下一个候选
-                    for fb_prov, fb_mdl in remaining:
-                        fb_key_api = decrypted.get(fb_prov.id, "")
-                        if not fb_key_api and fb_prov.api_key_encrypted:
-                            continue
-                        fb_key_cb = f"{fb_prov.name}||{fb_mdl}"
-                        if circuit_breaker.is_open(fb_key_cb):
-                            continue
-                        logger.info("stream fallback: switching to %s/%s", fb_prov.name, fb_mdl)
-                        fb_gen, fb_err = await forward_stream(client, fb_prov, fb_key_api, fb_mdl, body)
-                        if fb_gen is None:
-                            logger.warning("stream fallback %s/%s also failed: %s", fb_prov.name, fb_mdl, fb_err)
-                            continue
-                        try:
-                            async for chunk in fb_gen:
-                                yield chunk
-                                if b"[DONE]" in chunk:
-                                    done_sent = True
-                                    return
-                        except Exception as e:
-                            logger.warning("stream fallback gen error: %s", e)
-
-                    # 所有候选都用完了, 确保发 [DONE]
-                    if not done_sent:
-                        yield "data: [DONE]\n\n".encode()
-
-                # 收集剩余候选
+                # 流式 fallback: 主候选断流或"200 空流"时, 由 _stream_with_fallback 切换候选
                 remaining = [(p, m) for p, m in all_candidates
                              if (p.id, m) != (provider.id, model)]
+
+                def _candidate_available(p, m):
+                    if not decrypted.get(p.id, "") and p.api_key_encrypted:
+                        return False
+                    return not circuit_breaker.is_open(f"{p.name}||{m}")
+
+                async def _forward_candidate(p, m):
+                    return await forward_stream(client, p, decrypted.get(p.id, ""), m, body)
 
                 trace.mark_selected(provider.name, model, f"stream ok, cb={'hit' if cb_open else 'clean'}")
                 trace.finish()
@@ -722,7 +777,11 @@ async def proxy_chat(
                 )
                 return StreamingResponse(
                     rec.record(
-                        _stream_with_fallback(resp, remaining),
+                        _stream_with_fallback(
+                            resp, remaining,
+                            forward_candidate=_forward_candidate,
+                            candidate_available=_candidate_available,
+                        ),
                         on_done=_stream_usage_callback(
                             user, provider.name, model, tag="stream",
                         ),

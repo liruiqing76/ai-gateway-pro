@@ -5,9 +5,12 @@
 # ============================================================
 
 import time
+import logging
 from collections import deque
 
 from backend.config import settings
+
+logger = logging.getLogger("gateway.circuit")
 
 
 class CircuitState:
@@ -92,6 +95,21 @@ class CircuitBreaker:
         st.fails = self.fail_threshold  # 触发熔断
         st.open_until = time.time() + backoff
         st.last_fail_at = time.time()
+
+    def record_quota_exhausted(self, key: str) -> None:
+        """记录配额/余额耗尽(insufficient_quota / insufficient balance / entitlement)。
+
+        这类 429 在充值/重置额度之前会持续失败, 不像一般限流几十秒后能恢复,
+        用更长的冷却(120s 起、指数递增、上限 30min), 避免每笔请求都白打一遍。
+        """
+        st = self._get(key)
+        st.rate_limit_count += 1
+        stage = min(st.rate_limit_count - 1, 4)  # 120→240→480→960→1920, 再按 1800 封顶
+        backoff = min(120 * (2 ** stage), 1800)
+        st.fails = self.fail_threshold
+        st.open_until = time.time() + backoff
+        st.last_fail_at = time.time()
+        logger.info("quota exhausted for %s, cooling %.0fs", key, backoff)
 
     def reset(self, key: str) -> None:
         """手动重置"""

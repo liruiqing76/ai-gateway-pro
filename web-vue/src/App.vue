@@ -44,6 +44,9 @@
             <el-menu-item index="experience">
               <el-icon><MagicStick /></el-icon><span>{{ $t('app.nav.experience') }}</span>
             </el-menu-item>
+            <el-menu-item index="free-model-search">
+              <el-icon><Search /></el-icon><span>免费模型搜索</span>
+            </el-menu-item>
             <el-menu-item index="settings">
               <el-icon><Setting /></el-icon><span>{{ $t('app.nav.settings') }}</span>
             </el-menu-item>
@@ -94,6 +97,7 @@
             <Aliases v-if="activePage === 'aliases'" />
             <Requests v-if="activePage === 'requests'" />
             <Experience v-if="activePage === 'experience'" />
+            <FreeModelSearch v-if="activePage === 'free-model-search'" />
             <Settings v-if="activePage === 'settings'" />
           </div>
         </main>
@@ -121,6 +125,7 @@ import Aliases from './views/Aliases.vue'
 import Requests from './views/Requests.vue'
 import Experience from './views/Experience.vue'
 import Settings from './views/Settings.vue'
+import FreeModelSearch from './views/FreeModelSearch.vue'
 
 const { t, locale } = useI18n()
 
