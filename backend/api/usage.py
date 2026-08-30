@@ -7,7 +7,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from backend.auth.middleware import get_current_user_from_jwt
 from backend.models import get_session, User, UsageLog
@@ -34,10 +34,13 @@ def _serialize(row: UsageLog) -> dict:
 
 @router.get("/summary")
 async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
-    """聚合统计: 总调用数 / 总 token / 今日调用数 / 今日 token / 失败数。
+    """聚合统计: 总调用数 / 总 token / 今日调用数 / 今日 token / 失败数 /
+    今日字符 / 总字符。
 
     失败数从 chat_logs 统计(与"聊天记录"菜单同口径): usage_logs 只记成功
-    调用, 旧实现这里恒为 0, 用户对比两个菜单时永远"对不上"。"""
+    调用, 旧实现这里恒为 0, 用户对比两个菜单时永远"对不上"。
+    字符数同样来自 chat_logs.total_chars(与 daily/monthly 的 chars 同口径),
+    供仪表盘"Token + 字符数"双口径主卡展示。"""
     session = get_session()
     try:
         from backend.models import ChatLog
@@ -63,12 +66,135 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             .filter(ChatLog.user_id == user.id, ChatLog.success == False)  # noqa: E712
             .scalar() or 0
         )
+        today_chars = (
+            session.query(func.coalesce(func.sum(ChatLog.total_chars), 0))
+            .filter(ChatLog.user_id == user.id, ChatLog.created_at >= today_start)
+            .scalar() or 0
+        )
+        total_chars = (
+            session.query(func.coalesce(func.sum(ChatLog.total_chars), 0))
+            .filter(ChatLog.user_id == user.id)
+            .scalar() or 0
+        )
         return {
             "total": int(total),
             "today": int(today),
             "today_tokens": int(today_tokens),
             "total_tokens": int(total_tokens),
             "failed": int(failed),
+            "today_chars": int(today_chars),
+            "total_chars": int(total_chars),
+        }
+    finally:
+        session.close()
+
+
+@router.get("/reliability")
+async def usage_reliability(
+    min_calls: int = 10,
+    limit: int = 5,
+    user: User = Depends(get_current_user_from_jwt),
+):
+    """渠道 / 模型可靠性排行 — 回答"哪个渠道/模型最可靠"。
+
+    口径(与仪表盘设计稿一致):
+    - 数据源 request_traces: 只有它同时记录 success / latency_ms /
+      request_type, usage_logs 只写成功调用(成功率恒 100%), 不具备
+      可靠性意义
+    - 只统计真实请求: request_type='real' 或 NULL, 排除 speed_test
+      速度探测(后台自动测速的偶发失败不该拉低渠道成功率)
+    - **尝试级统计**: 网关有故障转移, 整条 trace 几乎总是"成功"
+      (失败会被重试兜底), 只看 trace 级成功率恒为 100% 没有区分度。
+      这里把 stages_detail 里的每次上游尝试(含失败重试)都计入,
+      成功率 = 成功尝试 / 总尝试, 才能看出"哪个渠道经常失败被跳过"
+    - 样本量(尝试次数) < min_calls 的渠道/模型不进榜, 把低频小模型
+      挡在榜外
+    """
+    from backend.models import RequestTrace
+    min_calls = max(1, min(int(min_calls), 1000))
+    limit = max(1, min(int(limit), 20))
+    session = get_session()
+    try:
+        real_filter = (
+            (RequestTrace.user_id == user.id)
+            & ((RequestTrace.request_type == "real")
+               | (RequestTrace.request_type.is_(None)))
+        )
+        probes = (
+            session.query(func.count(RequestTrace.id))
+            .filter(RequestTrace.user_id == user.id,
+                    RequestTrace.request_type == "speed_test")
+            .scalar() or 0
+        )
+        rows = (
+            session.query(
+                RequestTrace.provider_name,
+                RequestTrace.model_name,
+                RequestTrace.success,
+                RequestTrace.latency_ms,
+                RequestTrace.total_tokens,
+                RequestTrace.stages_detail,
+            )
+            .filter(real_filter)
+            .all()
+        )
+
+        # 尝试级聚合: {name: {attempts, ok, lat_sum, lat_n, tokens}}
+        def _bucket():
+            return {"attempts": 0, "ok": 0, "lat_sum": 0, "lat_n": 0, "tokens": 0}
+
+        prov_stats, model_stats = {}, {}
+
+        def _acc(stats, name, ok, lat):
+            if not name:
+                return
+            b = stats.setdefault(name, _bucket())
+            b["attempts"] += 1
+            if ok:
+                b["ok"] += 1
+                if lat:
+                    b["lat_sum"] += int(lat)
+                    b["lat_n"] += 1
+
+        for prov, model, success, lat, tok, stages in rows:
+            # trace 级(整体结果 + token 只记一次, 不随重试翻倍)
+            _acc(prov_stats, prov, bool(success), lat if success else 0)
+            _acc(model_stats, model, bool(success), lat if success else 0)
+            if success and prov:
+                prov_stats[prov]["tokens"] += int(tok or 0)
+            if success and model:
+                model_stats[model]["tokens"] += int(tok or 0)
+            # 阶段级: 故障转移中的每次上游尝试(失败重试是可靠性的核心信号)
+            for st in stages or []:
+                if not isinstance(st, dict):
+                    continue
+                _acc(prov_stats, st.get("provider"), bool(st.get("success")),
+                     st.get("latency_ms") if st.get("success") else 0)
+                _acc(model_stats, st.get("model"), bool(st.get("success")),
+                     st.get("latency_ms") if st.get("success") else 0)
+
+        def _rank(stats):
+            items = []
+            for name, b in stats.items():
+                if b["attempts"] < min_calls:
+                    continue
+                items.append({
+                    "name": name,
+                    "calls": b["attempts"],
+                    "success": b["ok"],
+                    "success_rate": round(b["ok"] / b["attempts"] * 100, 1),
+                    "avg_latency_ms": int(b["lat_sum"] / b["lat_n"]) if b["lat_n"] else None,
+                    "tokens": b["tokens"],
+                })
+            # 先按成功率、再按调用量排序: 同样可靠时高频渠道更可信
+            items.sort(key=lambda x: (-x["success_rate"], -x["calls"]))
+            return items[:limit]
+
+        return {
+            "providers": _rank(prov_stats),
+            "models": _rank(model_stats),
+            "excluded_probes": int(probes),
+            "min_calls": min_calls,
         }
     finally:
         session.close()

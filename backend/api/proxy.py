@@ -125,6 +125,10 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
             # 200 但无可识别文本同样视为失败(与流式"空流记失败"一致), 计入熔断
             if resp is not None:
                 circuit_breaker.record_fail(key_cb)
+            # 失败尝试也留痕: 可靠性统计按渠道归因失败率, 不记就永远"100% 成功"
+            trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                            int((time.time() - t0) * 1000), False,
+                            str(_err or "empty vision result")[:200])
             last_err = _err or "empty vision result"
             logger.warning("auto-vision candidate %s/%s failed: %s",
                            getattr(prov, "name", "?"), mdl, str(last_err)[:120])
@@ -183,8 +187,12 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
                     key_api = decrypted.get(prov.id, "")
                     if not key_api and prov.api_key_encrypted:
                         continue
+                    _t0 = time.time()
                     gen, _ = await forward_stream(client, prov, key_api, mdl, text_body)
                     if gen is None:
+                        # 失败尝试留痕(可靠性统计按渠道归因)
+                        trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                                        int((time.time() - _t0) * 1000), False, "stream open failed")
                         continue
                     trace.add_stage(len(trace.stages_detail), prov.name, mdl, 0, True, "streaming")
                     async for chunk in gen:
@@ -229,6 +237,10 @@ async def _auto_vision_chat(body, requested_model, stream, user, providers,
                                  model_name=requested_model, pt=pt, ct=ct,
                                  tag="auto-vision")
             return resp, False, None
+        # 失败尝试留痕(可靠性统计按渠道归因)
+        trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                        int((time.time() - t0) * 1000), False,
+                        str(_err or "no choices")[:200])
     trace.mark_error("文本模型调用失败")
     trace.finish()
     save_trace(trace)
@@ -514,9 +526,15 @@ async def proxy_chat(
                 if resp_ns is not None:
                     choices_c = resp_ns.get("choices")
                     if not choices_c:
+                        # 空候选也是失败尝试, 留痕供可靠性统计归因
+                        trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                                        stage_latency, False, "empty choices")
                         continue
                     trace.add_stage(len(trace.stages_detail), prov.name, mdl, stage_latency, True)
                     return resp_ns
+                # 失败尝试留痕(可靠性统计按渠道归因)
+                trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                                stage_latency, False, str(_err or "forward failed")[:200])
             trace.add_stage(len(trace.stages_detail), "", stage, 0, False, "all candidates failed")
             return None
 
@@ -529,10 +547,15 @@ async def proxy_chat(
                 key_api = decrypted.get(prov.id, "")
                 if not key_api and prov.api_key_encrypted:
                     continue
+                _t0 = time.time()
                 gen, err = await forward_stream(client_orch, prov, key_api, mdl, stage_body)
                 if gen is not None:
                     trace.add_stage(len(trace.stages_detail), prov.name, mdl, 0, True, "streaming")
                     return gen, None
+                # 失败尝试留痕(可靠性统计按渠道归因)
+                trace.add_stage(len(trace.stages_detail), prov.name, mdl,
+                                int((time.time() - _t0) * 1000), False,
+                                str(err or "stream open failed")[:200])
             trace.add_stage(len(trace.stages_detail), "", stage, 0, False, err or "all failed")
             return None, "所有候选均失败"
 
@@ -752,6 +775,7 @@ async def proxy_chat(
             trace.mark_circuit_breaker(True)
 
         if stream:
+            _t0 = time.time()
             resp, err = await forward_stream(client, provider, api_key, model, body)
             if resp is not None:
                 # 流式 fallback: 主候选断流或"200 空流"时, 由 _stream_with_fallback 切换候选
@@ -792,10 +816,15 @@ async def proxy_chat(
             last_err = err
             if "429" in str(err) or "rate" in str(err).lower():
                 trace.mark_rate_limit(True)
+            # 失败尝试留痕: 可靠性统计按渠道/模型归因失败率, 不记就永远"100% 成功"
+            trace.add_stage(len(trace.stages_detail), provider.name, model,
+                            int((time.time() - _t0) * 1000), False,
+                            str(err or "stream failed")[:200])
             logger.warning("stream fallback: %s failed, trying next: %s", f"{provider.name}/{model}", err)
             continue
 
         # 非流式
+        _t0 = time.time()
         resp, err = await forward_non_stream(client, provider, api_key, model, body)
         if resp is not None:
             # 防护: 上游返回 200 但 choices=null(魔搭在小 max_tokens 时会这样)
@@ -803,6 +832,8 @@ async def proxy_chat(
             if not choices:
                 logger.warning("upstream %s returned empty choices for %s, trying next", provider.name, model)
                 circuit_breaker.record_fail(f"{provider.name}||{model}")
+                trace.add_stage(len(trace.stages_detail), provider.name, model,
+                                int((time.time() - _t0) * 1000), False, "empty choices")
                 last_err = f"empty choices from {provider.name}"
                 continue
             # 记录用量
@@ -830,6 +861,10 @@ async def proxy_chat(
                                  model_name=model, pt=pt, ct=ct)
             return JSONResponse(content=resp)
 
+        # 非流式失败尝试留痕(可靠性统计按渠道归因)
+        trace.add_stage(len(trace.stages_detail), provider.name, model,
+                        int((time.time() - _t0) * 1000), False,
+                        str(err or "forward failed")[:200])
         last_err = err
 
     trace.mark_error(last_err or "all candidates failed")
