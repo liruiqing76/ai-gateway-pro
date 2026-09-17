@@ -414,6 +414,80 @@ async def get_http_client() -> httpx.AsyncClient:
 # ============================================================
 # POST /v1/chat/completions — OpenAI 兼容代理
 # ============================================================
+def _handle_upstream_404(user, provider, model: str, err) -> None:
+    """上游确定性"模型不可用"错误处理: 判定死模型 → 彻底移除 + 永久拉黑。
+
+    覆盖 404/410(模型不存在/已下架)与模型级 400(无服务商支持/未开通,
+    由 core/proxy.py 标记为 "upstream 400 (dead model)")。
+
+    连续 3 次是"确定性不可用"错误, 之后:
+      1) 24h 长冷却: 立刻不再尝试, 请求不再被它拖住;
+      2) 从该用户全部路由组彻底删除(写库永久, 热生效);
+      3) 拉黑登记 dead_models(写库永久): 刷新模型/自动分类/兜底池此后
+         都不会再把它带回来 —— 没有恢复的必要。
+    用户显式手动加回仍可行(那是用户意图); 若仍报错 → 再次移除+拉黑(幂等)。
+    """
+    if not err:
+        return
+    msg = str(err)
+    if ("upstream 404" not in msg and "upstream 410" not in msg
+            and "dead model" not in msg):
+        return
+    key = f"{provider.name}||{model}"
+    if not circuit_breaker.record_not_found(key):
+        return
+    entry = f"{provider.name}-{model}"
+    from backend.models import get_session, Router
+    from backend.core.dead_models import ban_model
+    removed = 0
+    s = get_session()
+    try:
+        for r in s.query(Router).filter_by(user_id=user.id).all():
+            ms = r.models or []
+            if entry in ms:
+                r.models = [m for m in ms if m != entry]
+                removed += 1
+        if removed:
+            s.commit()
+    finally:
+        s.close()
+    ban_model(user.id, provider.name, model)
+    logger.warning(
+        "dead model %s removed from %d group(s) & banned permanently",
+        entry, removed,
+    )
+
+
+def _infer_down_reason(err) -> str:
+    """根据上游错误推断下架原因(仅用于界面展示)。"""
+    e = str(err or "").lower()
+    if "429" in e or "rate" in e or "quota" in e:
+        return "rate_limit"
+    if "timeout" in e:
+        return "timeout"
+    if "empty" in e:
+        return "empty"
+    if "503" in e or "overload" in e:
+        return "overload"
+    return "auto"
+
+
+def _maybe_down_model(user, provider, model: str, err) -> None:
+    """反复报错(429/503/超时/空回等)触发熔断下架时, 持久化临时下架。
+
+    熔断器连续 DOWN_STRIKE_THRESHOLD 轮失败后把该 model 记入"刚下架"集合,
+    这里消费信号并写 downed_models(重启不丢, 到期自动恢复)。
+    只下架具体模型(provider||model), 绝不动整个源。
+    """
+    key = f"{provider.name}||{model}"
+    if not circuit_breaker.consume_downed(key):
+        return
+    from backend.core.downed_models import down_model
+    reason = _infer_down_reason(err)
+    down_model(user.id, provider.name, model, reason=reason)
+    logger.warning("model %s auto-downed & persisted (reason=%s)", key, reason)
+
+
 @router.post("/chat/completions")
 async def proxy_chat(
     request: Request,
@@ -458,8 +532,10 @@ async def proxy_chat(
         if not providers:
             raise HTTPException(503, "请先配置至少一个渠道")
 
-        # 路由组(用户自定义)
-        router_rows = session.query(Router).filter_by(user_id=user.id).all()
+        # 路由组(用户自定义)。按名字+id 排序保证确定性: 同名行已由启动迁移去重,
+        # 排序兜底避免无 ORDER BY 时 SQLite 全表扫描顺序波动
+        router_rows = session.query(Router).filter_by(user_id=user.id)\
+            .order_by(Router.name, Router.id).all()
         routers = {r.name: r.models for r in router_rows}
         router_strategies = {r.name: (r.strategy or "quality") for r in router_rows}
 
@@ -517,6 +593,8 @@ async def proxy_chat(
             if not cands:
                 return None
             for prov, mdl in cands:
+                if circuit_breaker.is_open(f"{prov.name}||{mdl}"):
+                    continue  # 熔断中的候选跳过
                 key_api = decrypted.get(prov.id, "")
                 if not key_api and prov.api_key_encrypted:
                     continue
@@ -544,6 +622,8 @@ async def proxy_chat(
             if not cands:
                 return None, "无可用模型"
             for prov, mdl in cands:
+                if circuit_breaker.is_open(f"{prov.name}||{mdl}"):
+                    continue  # 熔断中的候选跳过
                 key_api = decrypted.get(prov.id, "")
                 if not key_api and prov.api_key_encrypted:
                     continue
@@ -762,6 +842,44 @@ async def proxy_chat(
             seen.add((fb[0].id, fb[1]))
             all_candidates.append(fb)
 
+    # 冷却期快速失败: 全部候选都处于熔断冷却中时直接回 429 + Retry-After,
+    # 不再顺次把上游逐个打一遍 —— 每打一次都在加重对方限流/延长冷却,
+    # 客户端拿到 429 也会按 Retry-After 延迟重试, 链路整体更稳。
+    from backend.core.dead_models import banned_keys
+    banned = banned_keys(user.id)
+    # 临时下架(反复报错自动下架, 到期自动恢复): 重启后熔断器内存态已清空,
+    # 靠 downed_models 持久化表继续拦截, 保证下架重启不丢。
+    from backend.core.downed_models import active_down_keys
+    downed = active_down_keys(user.id)
+    usable = []
+    for provider, model in all_candidates:
+        key = f"{provider.name}||{model}"
+        if key in banned:
+            continue  # 死模型黑名单: 永久跳过(即使冷却已过也不恢复尝试)
+        if key in downed:
+            continue  # 临时下架中: 反复报错被自动下架, 到期自动恢复
+        if not circuit_breaker.is_open(key):
+            usable.append((provider, model))
+    if not usable:
+        retry_after = max(
+            [circuit_breaker.cooldown_seconds(f"{p.name}||{m}") for p, m in all_candidates]
+            or [60]
+        )
+        trace.mark_error(f"all candidates in cooldown, retry in {retry_after}s")
+        trace.finish()
+        save_trace(trace)
+        save_chat_log(
+            user_id=user.id, request_id=trace.request_id, original_model=requested_model or "",
+            prompt_text=prompt_text, success=False,
+            error_msg=f"all candidates in cooldown ({retry_after}s)",
+            is_stream=stream, latency_ms=trace.latency_ms,
+        )
+        raise HTTPException(
+            429, "上游全部处于限流/配额冷却中, 请稍后重试",
+            headers={"Retry-After": str(max(1, retry_after))},
+        )
+    all_candidates = usable
+
     for provider, model in all_candidates:
         api_key = decrypted.get(provider.id, "")
         # 免 key 渠道(如 opencode zen)存的是空串, 放行; 有存储但解密失败/未配才算不合法
@@ -772,7 +890,11 @@ async def proxy_chat(
         key_cb = f"{provider.name}||{model}"
         cb_open = circuit_breaker.is_open(key_cb)
         if cb_open:
+            # 熔断中的候选直接跳过(与自动识图/流式 fallback 的行为一致),
+            # 不再每次请求都白打一次; 冷却到期后自动恢复参与路由。
             trace.mark_circuit_breaker(True)
+            last_err = f"breaker open: {provider.name}/{model}"
+            continue
 
         if stream:
             _t0 = time.time()
@@ -816,6 +938,8 @@ async def proxy_chat(
             last_err = err
             if "429" in str(err) or "rate" in str(err).lower():
                 trace.mark_rate_limit(True)
+            _handle_upstream_404(user, provider, model, err)
+            _maybe_down_model(user, provider, model, err)
             # 失败尝试留痕: 可靠性统计按渠道/模型归因失败率, 不记就永远"100% 成功"
             trace.add_stage(len(trace.stages_detail), provider.name, model,
                             int((time.time() - _t0) * 1000), False,
@@ -865,6 +989,8 @@ async def proxy_chat(
         trace.add_stage(len(trace.stages_detail), provider.name, model,
                         int((time.time() - _t0) * 1000), False,
                         str(err or "forward failed")[:200])
+        _handle_upstream_404(user, provider, model, err)
+        _maybe_down_model(user, provider, model, err)
         last_err = err
 
     trace.mark_error(last_err or "all candidates failed")
@@ -891,7 +1017,7 @@ async def proxy_models(
         providers = session.query(Provider).filter_by(
             user_id=user.id, enabled=True
         ).all()
-        router_rows = session.query(Router).filter_by(user_id=user.id).all()
+        router_rows = session.query(Router).filter_by(user_id=user.id)            .order_by(Router.name, Router.id).all()
 
         models_list = []
 

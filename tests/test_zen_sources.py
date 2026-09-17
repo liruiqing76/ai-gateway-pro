@@ -49,18 +49,18 @@ def make_user(m, username="u1", email="u1@t.com"):
 
 
 def test_fetch_zen_free_models_parses(monkeypatch):
-    """从 zen 上游 /v1/models 目录提取免费档: 只收 id 尾部 -free; 付费绝不收录。"""
+    """从 zen 上游 /v1/models 目录提取候选: -free 后缀 + 官方白名单(big-pickle); 付费绝不收录。"""
     payload = {"object": "list", "data": [
         {"id": "deepseek-v4-flash-free", "object": "model"},
         {"id": "hy3-free", "object": "model"},
         {"id": "glm-5", "object": "model"},
         {"id": "claude-opus-5", "object": "model"},
-        {"id": "big-pickle", "object": "model"},    # 非 -free 结尾一律不碰
+        {"id": "big-pickle", "object": "model"},    # 官方免费模型白名单, 必须收
     ]}
     monkeypatch.setattr(zen_sources.httpx, "get", lambda *a, **k: _FakeResp(payload))
     got = zen_sources.fetch_zen_free_models()
-    assert got == ["deepseek-v4-flash-free", "hy3-free"]
-    assert "glm-5" not in got and "claude-opus-5" not in got and "big-pickle" not in got
+    assert got == ["big-pickle", "deepseek-v4-flash-free", "hy3-free"]
+    assert "glm-5" not in got and "claude-opus-5" not in got
 
 
 def test_fetch_zen_free_models_upstream_down(monkeypatch):
@@ -159,3 +159,66 @@ def test_health_all_dead_keeps_models(setup_db, monkeypatch):
     prov = s.query(Provider).filter_by(base_url=ZEN).first()
     assert len(prov.models) == len(FREE_MODELS)
     s.close()
+
+
+def test_sync_keeps_429_quota_models(setup_db, monkeypatch):
+    """429(免费额度当日用尽)模型保留在渠道, 不被当死模型排除。"""
+    from backend.models import Provider
+
+    class _QuotaProbe:
+        """200 或 429 都算可用; 其余算死。"""
+        def __call__(self, model_id, timeout=25.0):
+            if model_id == "mimo-v2.5-free":
+                return (False, "429 FreeUsageLimitError rate limited")
+            if model_id == "glm-5":
+                return (False, "401 Missing API key")
+            return (True, "ok")
+
+    make_user(setup_db)
+    monkeypatch.setattr(zen_sources, "fetch_zen_free_models",
+                        lambda: ["nemotron-3.5-lightning-free", "mimo-v2.5-free", "glm-5"])
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _QuotaProbe())
+
+    r = zen_sources.sync_zen_free_models()
+    assert "mimo-v2.5-free" in r["usable"]          # 429 额度型: 保留
+    assert "glm-5" in r["unusable"]                 # 401 付费档: 排除
+
+    m = setup_db
+    s = m.get_session()
+    prov = s.query(Provider).filter_by(base_url=ZEN).first()
+    assert "mimo-v2.5-free" in prov.models
+    s.close()
+
+
+def test_health_429_not_counted_as_failure(setup_db, monkeypatch):
+    """健康检测: 429 额度限制不计连续失败, 模型不会被踢出。"""
+    from backend.models import Provider
+    make_user(setup_db)
+    monkeypatch.setattr(zen_sources, "fetch_zen_free_models", lambda: FREE_MODELS)
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _FakeProbe(FREE_MODELS))
+    zen_sources.sync_zen_free_models()
+
+    # 多轮持续 429(额度整天用尽), 连续失败计数不得累计 → 永不移除
+    for _ in range(3):
+        monkeypatch.setattr(zen_sources, "probe_zen_model",
+                            _FakeProbe(["nemotron-3.5-lightning-free"], "429 FreeUsageLimitError"))
+        r = zen_sources.health_check_zen_models()
+        assert r["removed"] == []
+
+    m = setup_db
+    s = m.get_session()
+    prov = s.query(Provider).filter_by(base_url=ZEN).first()
+    assert set(prov.models) == set(FREE_MODELS)
+    s.close()
+
+
+def test_sync_skips_unusable_models(setup_db, monkeypatch):
+    """非免费档/死模型不进入渠道(旧行为回归保护: 401 付费档排除)。"""
+    from backend.models import Provider
+    make_user(setup_db)
+    monkeypatch.setattr(zen_sources, "fetch_zen_free_models", lambda: FREE_MODELS)
+    monkeypatch.setattr(zen_sources, "probe_zen_model",
+                        _FakeProbe(FREE_MODELS, "401 Missing API key"))
+    r = zen_sources.sync_zen_free_models()
+    assert set(r["usable"]) == set(FREE_MODELS)
+    assert set(r["unusable"]) == set()

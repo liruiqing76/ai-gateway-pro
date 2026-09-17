@@ -86,6 +86,9 @@ class Provider(Base):
     models = Column(JSON, default=list)
     disabled_models = Column(JSON, default=list)
     free_only = Column(Boolean, default=True)
+    # 流量整形(可空 = 用全局默认): 渠道并发上限 / 同一模型最小调用间隔(毫秒)
+    max_concurrency = Column(Integer, nullable=True)
+    min_interval_ms = Column(Integer, nullable=True)
     is_template = Column(Boolean, default=False)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -102,6 +105,12 @@ class Provider(Base):
 
 class Router(Base):
     __tablename__ = "routers"
+    # 同用户同组名唯一: 旧库曾出现同名重复行(历史版本/并发写入),
+    # 读路径 dict 按 name 取最后一行、写路径却只改第一行 —— 编辑保存落到
+    # 展示外的行上, 表现为"剔除了的模型又被勾选"。约束从根上杜绝重复。
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_routers_user_name"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -111,6 +120,49 @@ class Router(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", back_populates="routers")
+
+
+# ============================================================
+# 死模型拉黑(404/410 确认下架/停用 → 彻底删除, 永久不自动恢复)
+# ============================================================
+class DeadModel(Base):
+    __tablename__ = "dead_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "provider_name", "model",
+            name="uq_dead_models_user_provider_model",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider_name = Column(String(64), nullable=False)
+    model = Column(String(255), nullable=False)
+    marked_at = Column(DateTime, default=datetime.now)
+
+
+# ============================================================
+# 临时下架模型(429/503/超时/空回复等反复报错 → 自动下架, 到期自动恢复)
+# 与 dead_models 区分: 那是 404/410 确定性死模型(永久拉黑, 不自动恢复);
+# 这里是"暂时性故障反复出现"的临时下架, recovers_at 到期后自动重新参与路由,
+# 不删源、不永久封死——免费模型偶发恢复是常态。
+# ============================================================
+class DownedModel(Base):
+    __tablename__ = "downed_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "provider_name", "model",
+            name="uq_downed_models_user_provider_model",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider_name = Column(String(64), nullable=False)
+    model = Column(String(255), nullable=False)
+    reason = Column(String(32), nullable=True)   # rate_limit / overload / timeout / empty / quota
+    downed_at = Column(DateTime, default=datetime.now)
+    recovers_at = Column(DateTime, nullable=False, index=True)  # 到期自动恢复
 
 
 # ============================================================
@@ -533,6 +585,10 @@ def _migrate_columns(engine):
             "request_traces": {
                 "request_type": "VARCHAR(16)",
             },
+            "providers": {
+                "max_concurrency": "INTEGER",
+                "min_interval_ms": "INTEGER",
+            },
         }
         for table, cols in add_cols.items():
             if table not in tables:
@@ -545,6 +601,29 @@ def _migrate_columns(engine):
                             f'ALTER TABLE {table} ADD COLUMN {col} {coltype}'
                         ))
                         log.info("DB migration: %s ADD COLUMN %s", table, col)
+
+        # ── 3. 路由组同名去重 + 唯一索引 ──
+        # 旧库遗留: 同名路由组多行(历史版本/并发写入), 读路径 dict 按 name 取
+        # 最后一行、写路径却只改第一行 → 编辑保存到展示外的行上("剔除又勾选")。
+        # 去重保留 id 最大的一行(即读路径一直生效的那行), 行为与迁移前一致。
+        if "routers" in tables:
+            with engine.begin() as conn:
+                conn.execute(sa.text(
+                    "DELETE FROM routers WHERE id NOT IN ("
+                    "  SELECT MAX(id) FROM routers GROUP BY user_id, name)"
+                ))
+            try:
+                conn = engine.connect()
+                try:
+                    conn.execute(sa.text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_routers_user_name "
+                        "ON routers(user_id, name)"
+                    ))
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception:
+                log.exception("routers unique index creation failed")
 
     except Exception:
         log.exception("DB column migration failed")

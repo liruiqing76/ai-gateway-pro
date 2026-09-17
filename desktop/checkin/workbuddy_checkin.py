@@ -5,11 +5,11 @@ WorkBuddy 桌面端 自动签到 —— 界面点击版（pyautogui + RapidOCR�
 
 原理：不调用任何内部 API，纯粹用桌面 GUI 自动点击：
   1. 用 ctypes 把 WorkBuddy 桌面端真正提到前台（绕过 Win SetForegroundWindow 限制）
-  2. 点击左下角【头像】打开左侧菜单
-  3. 用 RapidOCR（本地轻量 OCR 模型，纯 onnxruntime，不联网、不调任何大语言模型）
-     识别菜单里的「每日签到领 X 积分」行，点击该行进入签到详情/弹窗
-  4. 在详情/弹窗里 OCR 定位「签到」按钮并点击
-  5. 回到头像菜单，用 OCR 检测是否出现「今日已签」，出现即判定成功
+  2. 【V5.4.7+ 主流程】全屏 OCR 直接定位主界面左下角「Buddy加油站」卡片上的
+     「立即领取」按钮并点击（新版入口无需点头像）
+  3. 点击后 OCR 检测「今日已领」/「已领N天」变化，出现即判定成功
+  4. 【旧版兜底】主界面找不到按钮时，退回旧流程：点头像 → 菜单「签到领积分」
+     行 → 详情页「立即领取」按钮
 
 说明：本脚本使用的 RapidOCR 是本地运行的 OCR 模型，并非大语言模型（LLM），
 不向任何外部服务发起请求，满足「不调用大模型」的要求。
@@ -18,9 +18,11 @@ WorkBuddy 桌面端 自动签到 —— 界面点击版（pyautogui + RapidOCR�
 日常签到：python workbuddy_checkin.py
 仅检测：  python workbuddy_checkin.py status
 
-关键经验（2026-08-18 实测）：
-  * 入口和 Trae 高度同构：左下角头像菜单 → "每日签到领 200 积分" 行。
-  * 已签时右侧显示「今日已签」；未签时点击该行会弹出详情/弹窗，内有「签到」按钮。
+关键经验：
+  * V5.4.5 改版后头像菜单里不再有「签到领积分」行（菜单只剩 帮助与反馈/
+    检查更新/退出登录），9-02 曾因此签到失败；
+  * V5.4.7 起签到入口直接在主界面左下角：Buddy加油站·N期 卡片 +
+    「立即领取」按钮（已领后变「今日已领」，右上角「累计领取X分」会累加）；
   * 头像菜单每次打开位置稳定，但仍用 OCR 做反馈最保险。
   * pygetwindow 的 activate() 在后台会报 Win32 错误 183，必须用 ctypes
     AttachThreadInput + SetForegroundWindow 才能真正把窗口提到前台。
@@ -304,6 +306,19 @@ def find_sign_button(items, max_x=SIGN_BTN_MAX_X):
     return None
 
 
+def find_main_claim_btn(items):
+    """主界面 Buddy加油站卡片上的「立即领取」按钮（V5.4.7+）。
+
+    新版签到入口直接显示在主界面左下角，无需点头像进菜单。
+    先精确匹配「立即领取」，避免把「认证领积分」等邻近文字点错。
+    """
+    for text, cx, cy, box in items:
+        if text.strip() == "立即领取":
+            return cx, cy
+    # 兜底：与详情页一致的宽松匹配（「领」/「签」等短按钮词）
+    return find_sign_button(items, max_x=10000)
+
+
 # ---------- 头像菜单 ----------
 def ensure_menu_open(avatar_x, avatar_y, attempts=4):
     """确保头像菜单处于打开状态，返回【菜单区域】截图。
@@ -324,7 +339,10 @@ def ensure_menu_open(avatar_x, avatar_y, attempts=4):
         pyautogui.click(avatar_x, avatar_y)
         time.sleep(2.5)
         last_img = shot_menu()
-        if find_checkin_row(ocr_image(last_img))[0] is not None:
+        items = ocr_image(last_img)
+        # 已签时菜单里可能没有签到行, 检测到"今日已领/已签"同样算打开成功,
+        # 避免已签状态下反复点头像把菜单开关折腾乱
+        if find_checkin_row(items)[0] is not None or is_signed(items)[0]:
             return last_img
     return last_img
 
@@ -386,55 +404,32 @@ def launch_if_not_running(exe_name: str, exe_path: str | None = None) -> bool:
 
 
 # ---------- 执行签到 ----------
-def run(dry=False):
-    cfg = load_config()
-    if not cfg:
-        sys.exit("尚未校准。请先运行: python workbuddy_checkin.py calibrate")
+def _run_legacy(dry, ax, ay, wl, wt):
+    """旧版入口兜底：点头像 → 菜单「签到领积分」行 → 详情页「立即领取」。
 
-    if not RAPIDOCR_AVAILABLE:
-        sys.exit("缺少 RapidOCR。请先运行: pip install rapidocr_onnxruntime")
-
-    if already_today():
-        log("今天 (%s) 已经签到过，跳过。" % date.today())
-        return
-
-    # 自动检测并启动 WorkBuddy（若未运行）
-    try:
-        from detect_exe import find_workbuddy_exe
-        wb_exe = find_workbuddy_exe()
-    except ImportError:
-        wb_exe = r"C:\Users\leslie\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe"
-    launch_if_not_running("WorkBuddy", wb_exe)
-
-    win = find_window(cfg["window_title"])
-    if not win:
-        log("找不到标题为 %r 的窗口。请先打开 WorkBuddy 桌面端并登录。" % cfg["window_title"])
-        return
-
-    wl, wt = activate_window(win)
-    ax, ay = cfg["avatar"]["x"], cfg["avatar"]["y"]
-    # 如果窗口坐标变了（多屏/DPI），用相对偏移修正
-    ax = wl + (ax - cfg.get("window_left", wl))
-    ay = wt + (ay - cfg.get("window_top", wt))
-
+    V5.4.5 改版后菜单里已无签到行（9-02 曾因此失败），V5.4.7 起主界面
+    直接有按钮；此流程保留用于旧版本/回归兜底。
+    """
     log("点击头像 (%d, %d) 打开菜单" % (ax, ay))
-    os.makedirs(SHOTS, exist_ok=True)
 
     # 1) 打开菜单并定位签到行
     img = ensure_menu_open(ax, ay)
     items = ocr_image(img)
-    text, box = find_checkin_row(items)
-    if text is None:
-        img.save(os.path.join(SHOTS, "wb_diagnose_%s.png" % date.today()))
-        log("OCR 未定位到【每日签到】行，已保存诊断截图 wb_diagnose_%s.png。" % date.today())
-        log("可能原因：今日已签 / 界面改版 / 未开启积分计费模式。若改版请重跑 calibrate。")
-        return
 
+    # 先查已签标志再查签到行: 已签时菜单里可能不再显示「签到领积分」行,
+    # 用旧的顺序会误报"未定位到签到行"。09-01 实测踩过这个坑。
     signed, reason = is_signed(items)
     if signed:
         if not dry:
             mark_today()
         log("✅ 检测到已签到（%s），无需重复点击。" % reason)
+        return
+
+    text, box = find_checkin_row(items)
+    if text is None:
+        img.save(os.path.join(SHOTS, "wb_diagnose_%s.png" % date.today()))
+        log("OCR 未定位到【每日签到】行，已保存诊断截图 wb_diagnose_%s.png。" % date.today())
+        log("可能原因：今日已签 / 界面改版 / 未开启积分计费模式。若改版请重跑 calibrate。")
         return
 
     if dry:
@@ -494,6 +489,83 @@ def run(dry=False):
         return
 
     log("⚠️ 验证未通过。请打开 shots/wb_after_checkin_%s.png 核对；若今日已手动签过属正常。" % date.today())
+
+
+def run(dry=False):
+    cfg = load_config()
+    if not cfg:
+        sys.exit("尚未校准。请先运行: python workbuddy_checkin.py calibrate")
+
+    if not RAPIDOCR_AVAILABLE:
+        log("缺少 OCR 引擎(rapidocr_onnxruntime/onnxruntime)。若为打包版, "
+            "多为安全软件隔离了 onnxruntime 组件; 请将 exe 加入信任区后重启应用。")
+        sys.exit("缺少 RapidOCR。请先运行: pip install rapidocr_onnxruntime")
+
+    if already_today():
+        log("今天 (%s) 已经签到过，跳过。" % date.today())
+        return
+
+    # 自动检测并启动 WorkBuddy（若未运行）
+    try:
+        from detect_exe import find_workbuddy_exe
+        wb_exe = find_workbuddy_exe()
+    except ImportError:
+        wb_exe = r"C:\Users\leslie\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe"
+    launch_if_not_running("WorkBuddy", wb_exe)
+
+    win = find_window(cfg["window_title"])
+    if not win:
+        log("找不到标题为 %r 的窗口。请先打开 WorkBuddy 桌面端并登录。" % cfg["window_title"])
+        return
+
+    wl, wt = activate_window(win)
+    ax, ay = cfg["avatar"]["x"], cfg["avatar"]["y"]
+    # 如果窗口坐标变了（多屏/DPI），用相对偏移修正
+    ax = wl + (ax - cfg.get("window_left", wl))
+    ay = wt + (ay - cfg.get("window_top", wt))
+    os.makedirs(SHOTS, exist_ok=True)
+
+    # 1) 主界面直领（V5.4.7+ Buddy加油站 卡片，无需点头像）
+    img = pyautogui.screenshot().convert("RGB")
+    items = ocr_image(img)
+    signed, reason = is_signed(items)
+    if signed:
+        if not dry:
+            mark_today()
+        log("✅ 检测到已签到（%s），无需重复点击。" % reason)
+        return
+
+    claim = find_main_claim_btn(items)
+    if claim is None:
+        log("主界面未检测到【立即领取】按钮，尝试旧版菜单入口兜底...")
+        _run_legacy(dry, ax, ay, wl, wt)
+        return
+
+    if dry:
+        log("检测到【立即领取】按钮: (%d, %d)" % claim)
+        log("(status 模式不点击，如需真正签到请运行: python workbuddy_checkin.py)")
+        return
+
+    # 点击「立即领取」→ 等界面刷新 → 检测「今日已领/已签」；最多两轮
+    # （按钮坐标或弹层动画可能让第一击落空，第二轮重新 OCR 后补点）
+    for attempt in (1, 2):
+        log("主界面找到【立即领取】按钮 (%d, %d)，点击(第%d轮)" % (claim[0], claim[1], attempt))
+        pyautogui.click(claim[0], claim[1])
+        time.sleep(2.5)
+        img2 = pyautogui.screenshot().convert("RGB")
+        img2.save(os.path.join(SHOTS, "wb_after_checkin_%s.png" % date.today()))
+        signed2, reason2 = is_signed(ocr_image(img2))
+        if signed2:
+            mark_today()
+            log("✅ 签到成功！（%s）" % reason2)
+            log("截图: shots/wb_after_checkin_%s.png" % date.today())
+            return
+        # 按钮还在（未点中）→ 重新定位再点一次
+        items = ocr_image(img2)
+        claim = find_main_claim_btn(items) or claim
+
+    log("⚠️ 点击后未检测到已签标志，尝试旧版菜单入口兜底...")
+    _run_legacy(dry, ax, ay, wl, wt)
 
 
 def main():

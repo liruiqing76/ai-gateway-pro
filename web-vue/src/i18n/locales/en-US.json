@@ -369,7 +369,11 @@
     "deleteFailed": "Failed to delete: ",
     "footerSummary": "{count} channels · {models} models · Use the buttons above to add",
     "refreshModels": "Refresh models",
-    "refreshFailed": "Refresh failed"
+    "refreshFailed": "Refresh failed",
+    "trafficShaping": "Traffic shaping (optional)",
+    "maxConcurrencyPlaceholder": "Max concurrency (e.g. 2)",
+    "minIntervalPlaceholder": "Min interval ms (e.g. 600)",
+    "trafficShapingHint": "Max concurrency: max simultaneous requests (free tier 2, others 4); Min interval: minimum gap between calls to the same model to avoid upstream rate limits"
   },
   "requests": {
     "pageTitle": "Requests",

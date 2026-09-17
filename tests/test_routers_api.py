@@ -153,3 +153,29 @@ class TestRouterValidation:
         ids = {m["id"] for m in r.json()["data"]}
         assert "high_quality" in ids
         assert "vision" in ids
+
+    def test_auto_rebuild_preserves_manually_edited_group(self, client):
+        """渠道操作触发的自动重建(rebuild_user_routers)只补齐缺失组,
+        绝不覆盖用户手动调整过的路由组 —— 回归: 手动删掉的下架模型不许复活"""
+        from backend.models import get_session, User, Router
+        from backend.api.providers import rebuild_user_routers
+
+        s = get_session()
+        try:
+            u = s.query(User).filter_by(email="test@x.com").first()
+            # 用户手动配置的 high_quality(自定义列表, 与渠道自动生成的完全不同)
+            s.add(Router(user_id=u.id, name="high_quality",
+                         models=["CustomModel-keep-me"], strategy="quality"))
+            s.commit()
+
+            created = rebuild_user_routers(s, u.id)
+            s.commit()
+
+            hq = s.query(Router).filter_by(user_id=u.id, name="high_quality").first()
+            assert hq.models == ["CustomModel-keep-me"], "用户手动组被自动覆盖!"
+
+            names = {r.name for r in s.query(Router).filter_by(user_id=u.id).all()}
+            assert "vision" in names, f"缺失组未补齐: {names}"
+            assert "high_quality" not in created, "已存在的组不应出现在返回值(未新建)"
+        finally:
+            s.close()

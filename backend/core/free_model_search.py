@@ -5,10 +5,11 @@
 
 功能:
   1. 搜索多个来源（Gitee, GitHub, 百度, 今日头条, 微信公众号）关于免费模型注册的帖子
-  2. 去重（首级: 来源+URL, 次级: 内容相似度）
+  2. 去重（首级: 来源+URL+标题哈希; 次级: 标题签名, 抗 URL token 每日变化）
   3. 入库存储
   4. 调用 LLM 评估每条帖子的可行性和真实性
   5. 生成 Markdown 报告
+  6. 用户"忽略"：精确 hash + 标题签名双记录，同一篇文章换 URL/token 也不会再出现
 
 提供手动搜索入口 run_free_model_search(), 被定时任务和 API 共用。
 """
@@ -19,7 +20,8 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from pathlib import Path
 from html import unescape
 from typing import Dict, List, Optional, Tuple
@@ -30,10 +32,264 @@ import httpx
 logger = logging.getLogger("gateway")
 
 # 数据目录与报告目录
-CORE_DIR = Path(__file__).resolve().parent
-DATA_DIR = CORE_DIR.parent / "data"
-REPORTS_DIR = DATA_DIR / "free_models"
+# ★ 必须用运行时数据目录(runtime_data_dir, GW_DB_PATH 感知): 打包后 __file__
+#   指向 onefile 的临时解压目录(_MEIxxx), 直接取路径会在进程退出时全部丢失,
+#   表现为"忽略/报告/原始 HTML 重启即消失"。桌面模式落在 exe 旁 data/ 下。
+from backend.core.free_sources import runtime_data_dir
+
+REPORTS_DIR = runtime_data_dir() / "free_models"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# 用户忽略的帖子列表（手动标记为无关的内容）: 精确 hash + 标题签名双记录,
+# 避免同一篇文章换成带新 token 的 URL 后绕开忽略重新出现
+IGNORED_FILE = REPORTS_DIR / ".ignored_posts.json"
+
+# 帖子时效窗口: 超过该天数的帖子/报告一律不再返回(免费 API 时效性很强,
+# 7 天前的注册/额度帖子基本已失效, 无保留意义, 默认 7 天)
+MAX_POST_AGE_DAYS = 7
+
+# "文章/帖子"类来源: 搜的是有时效的文章, 必须拿到发表时间, 否则新旧不明、
+# 几年前的旧文也会混进结果(这正是"旧文章链接发给用户"的根因)。
+# github/gitee 搜的是仓库(created_at 语义不同), 不在其列。
+ARTICLE_SOURCES = {"wechat", "baidu", "toutiao"}
+
+
+def _coerce_published_at(value):
+    """把来源各异的时间值统一成 datetime; 解析失败返回 None。
+
+    兼容: datetime / ISO 字符串 / 秒级整数时间戳 / 毫秒级整数时间戳。
+    今日头条的 publish_time 常是秒级整数, 微信是秒级时间戳, 百度可能缺失。
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 1e12:  # 毫秒级
+            ts = ts / 1000.0
+        try:
+            return datetime.fromtimestamp(ts)
+        except (ValueError, OSError):
+            return None
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        if s.isdigit():  # 纯数字时间戳
+            ts = float(s)
+            if ts > 1e12:
+                ts = ts / 1000.0
+            try:
+                return datetime.fromtimestamp(ts)
+            except (ValueError, OSError):
+                return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def is_post_fresh(post, max_age_days: int = MAX_POST_AGE_DAYS) -> bool:
+    """帖子是否在时效窗口内。
+
+    优先用 published_at(内容发表时间, 语义上的"时效"), 缺失时:
+    - 文章类来源(wechat/baidu/toutiao)视为新旧不明 → False, 直接不放行;
+    - 仓库类来源(github/gitee)退化为 fetched_at(抓取时间)。
+    做过时区归一化避免 aware/naive 比较崩溃。
+    """
+    ts = getattr(post, "published_at", None)
+    source = getattr(post, "source", "") or ""
+    if ts is None:
+        if source in ARTICLE_SOURCES:
+            return False
+        ts = getattr(post, "fetched_at", None)
+    if ts is None:
+        return True
+    if getattr(ts, "tzinfo", None) is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return (datetime.now() - ts).total_seconds() <= max_age_days * 86400
+
+
+def _title_key(title: str) -> str:
+    """规范化标题 → 稳定的内容签名。
+
+    很多来源（搜狗微信/今日头条/百度）返回的是带时效 token 的中转跳转 URL，
+    同一篇文章每天拿到的 URL 都会变，导致按 URL 算的 hash_key 每次都不稳定、
+    忽略和去重都失效。这里用"标题规范化后的指纹"来识别同一篇内容：
+    统一小写、合并空白、去掉常见标点/emoji 干扰。
+    """
+    t = (title or "").strip().lower()
+    # 合并空白、全半角空格
+    t = re.sub(r"\s+", " ", t)
+    # 去掉 URL、常见标点与装饰符号，保留汉字/字母/数字
+    t = re.sub(r"https?://\S+", "", t)
+    t = re.sub(r"[^\w\u4e00-\u9fff]+", "", t, flags=re.UNICODE)
+    return t or ""
+
+
+# 标题签名参与"自动去重"的最短长度: 太短的签名(如"免费模型")过于泛化,
+# 不同文章可能撞同一签名 → 自动去重要求足够长, 避免误并; 用户"手动忽略"不受此限。
+MIN_TITLE_KEY_LEN = 6
+
+
+def _ignored_file_data() -> dict:
+    """读取忽略文件，兼容旧格式（旧文件只有 hashes）。"""
+    if not IGNORED_FILE.exists():
+        return {"hashes": [], "titles": []}
+    try:
+        data = json.loads(IGNORED_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {"hashes": [], "titles": []}
+        return {
+            "hashes": data.get("hashes") or [],
+            "titles": data.get("titles") or [],
+        }
+    except Exception as e:
+        logger.warning(f"加载忽略列表失败：{e}")
+        return {"hashes": [], "titles": []}
+
+
+def load_ignored_hashes() -> set:
+    """加载用户手动标记为忽略的帖子哈希（32 位 SHA256）"""
+    return set(_ignored_file_data()["hashes"])
+
+
+def load_ignored_title_keys(session=None) -> set:
+    """加载忽略的标题签名（用于抗 URL token 变化，识别同一篇内容）。
+
+    传 session 时按 hash 回填标题签名: 老版本忽略文件只有 hash(如 dist 部署
+    里已积累的旧忽略), 同一篇文章换成带新 token 的 URL 后 hash 会变,
+    回填标题签名才能继续拦住它。
+    """
+    keys = set(_ignored_file_data()["titles"])
+    if session is None:
+        return keys
+    hashes = load_ignored_hashes()
+    if not hashes:
+        return keys
+    try:
+        from backend.models import FreeModelPost
+        rows = session.query(FreeModelPost).filter(FreeModelPost.hash_key.in_(list(hashes))).all()
+        for p in rows:
+            t = _title_key(p.title)
+            if t:
+                keys.add(t)
+    except Exception as e:
+        logger.warning(f"回填忽略标题签名失败: {e}")
+    return keys
+
+
+def save_ignored(hashes: set, title_keys: set):
+    """保存忽略的帖子哈希 + 标题签名到文件。"""
+    try:
+        IGNORED_FILE.write_text(
+            json.dumps(
+                {"hashes": sorted(hashes), "titles": sorted(title_keys)},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8"
+        )
+    except Exception as e:
+        logger.error(f"保存忽略列表失败：{e}")
+
+
+def save_ignored_hashes(hashes: set):
+    """兼容旧引用：只传 hashes 时保留已有 titles。"""
+    title_keys = load_ignored_title_keys()
+    save_ignored(hashes, title_keys)
+
+
+def is_ignored(post_hash: str, title: str = "", session=None) -> bool:
+    """帖子是否命中忽略列表（精确 hash 或标题签名任一命中即视为忽略）。
+
+    session 用于回填老版本 hash-only 忽略记录的标题签名。
+    """
+    ignored_hashes = load_ignored_hashes()
+    if post_hash and post_hash in ignored_hashes:
+        return True
+    tkey = _title_key(title)
+    if tkey and tkey in load_ignored_title_keys(session):
+        return True
+    return False
+
+
+def make_ignore_check(session=None):
+    """一次性加载忽略集合，返回 O(1) 的忽略判断函数。
+
+    批量场景（报告详情逐条过滤帖子）用这个，避免每条帖子都重新读忽略文件/查库。
+    """
+    ignored_hashes = load_ignored_hashes()
+    ignored_title_keys = load_ignored_title_keys(session)
+
+    def check(post_hash: str, title: str) -> bool:
+        if post_hash and post_hash in ignored_hashes:
+            return True
+        tkey = _title_key(title)
+        return bool(tkey and tkey in ignored_title_keys)
+
+    return check
+
+
+def mark_post_as_ignored(post_hash: str, title: str = "") -> bool:
+    """
+    用户手动标记某条帖子为忽略（不再出现在搜索结果中）。
+    
+    同时记录精确 hash 和标题签名，这样即使同一篇文章下次带着不同的
+    搜索 URL/token 回来，也能被同样识别为忽略。
+
+    Args:
+        post_hash: 帖子的 hash_key（32 位 SHA256）
+        title: 帖子标题（用于生成稳定的标题签名）
+    
+    Returns:
+        True 如果成功添加到忽略列表，False 如果已在列表中
+    """
+    hashes = load_ignored_hashes()
+    title_keys = load_ignored_title_keys()
+    tkey = _title_key(title)
+    added = False
+    if post_hash and post_hash not in hashes:
+        hashes.add(post_hash)
+        added = True
+    if tkey and tkey not in title_keys:
+        title_keys.add(tkey)
+        added = True
+    if not added:
+        return False
+    save_ignored(hashes, title_keys)
+    logger.info(f"已标记帖子 {post_hash[:16] if post_hash else ''} (标题签名 {tkey[:16]}) 为忽略")
+    return True
+
+
+def unmark_post_as_ignored(post_hash: str, title: str = "") -> bool:
+    """
+    取消忽略某条帖子。
+    
+    Args:
+        post_hash: 帖子的 hash_key
+        title: 帖子标题（生成的标题签名也会一并移除）
+    
+    Returns:
+        True 如果成功移除，False 如果未在忽略列表中
+    """
+    hashes = load_ignored_hashes()
+    title_keys = load_ignored_title_keys()
+    tkey = _title_key(title)
+    removed = False
+    if post_hash and post_hash in hashes:
+        hashes.discard(post_hash)
+        removed = True
+    if tkey and tkey in title_keys:
+        title_keys.discard(tkey)
+        removed = True
+    if not removed:
+        return False
+    save_ignored(hashes, title_keys)
+    logger.info(f"已取消帖子 {post_hash[:16] if post_hash else ''} 的忽略标记")
+    return True
 
 # 默认搜索关键词
 DEFAULT_KEYWORDS = [
@@ -70,6 +326,194 @@ def _make_session() -> httpx.Client:
         headers={"User-Agent": UA_PC},
         transport=httpx.HTTPTransport(retries=2),
     )
+
+
+# 判定为"不可读/失效"落地页的特征: 出现任一即视为死链(公众号文章被删/需登录/
+# 反爬/内容被折叠时常见), 避免把"打开即失效"的链接发给用户。
+_DEAD_LINK_MARKERS = (
+    "该内容已被发布者删除",
+    "此内容因违规无法查看",
+    "此内容被投诉且经审核涉嫌侵权",
+    "该文章已删除",
+    "此内容涉嫌违规",
+    "接验证码",
+    "验证码",
+    "环境异常",
+    "系统繁忙",
+)
+
+
+def verify_link_live(url: str, session: httpx.Client = None,
+                     timeout: float = 8.0) -> bool:
+    """真实请求目标链接, 确认可读且未失效。
+
+    中转链接在入库前已由 _resolve_search_url 解析成直链, 这里再对直链做
+    真实可达性验证:
+      - HTTP 200 才算通;
+      - 落地页 HTML 出现失效/验证特征(公众号被删、需验证码等)判定为死链;
+      - 网络异常/超时判定为不可达。
+
+    返回 False 的帖子不入库, 也用于定时回填时淘汰存量死链。
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return False
+    headers = {
+        "User-Agent": UA_MOBILE,  # 公众号对移动 UA 更宽松, 验证页更少
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    try:
+        resp = session.get(url, headers=headers, timeout=timeout) if session else _make_session().get(url, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            return False
+        body = resp.text[:8000].lower()
+        for marker in _DEAD_LINK_MARKERS:
+            if marker in body:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+# 搜索结果里带时效 token 的中转跳转域名: 直接入库的话 token 过期后
+# 用户点开就是"链接已失效"。抓取时解析成最终直链再入库。
+REDIRECT_HOSTS = {"weixin.sogou.com", "www.baidu.com", "baidu.com"}
+
+
+def _resolve_search_url(url: str, session: httpx.Client, timeout: float = 10.0) -> Optional[str]:
+    """把搜索引擎的中转跳转链接解析为最终直链; 无法解析时返回 None(调用方丢弃该条)。
+
+    - 搜狗微信(weixin.sogou.com/link): 无 cookie 时不会 302, 而是返回一段
+      JS 拼 URL 的落地页(`url += '...'` 片段), 拼起来即 mp.weixin.qq.com 文章直链;
+    - 百度(baidu.com/link): 直接 302 到落地页, 跟随重定向即可;
+    - 其他域名原样返回, 不发起请求。
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        host = urlsplit(url).hostname or ""
+    except Exception:
+        return None
+    if host not in REDIRECT_HOSTS:
+        return url
+    headers = {
+        "User-Agent": UA_PC,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    try:
+        if "weixin.sogou.com" in host:
+            # 浏览器从搜索结果页点开中转链接时 Referer 是搜狗搜索页
+            headers["Referer"] = "https://weixin.sogou.com/"
+            resp = session.get(url, headers=headers, timeout=timeout)
+            if resp.status_code != 200:
+                return None
+            # 搜狗 /link 落地页靠 JS `url += '片段';` 拼出真链接;
+            # 只做 &amp; 替换避免 html.unescape 把 &timestamp 误转成 ×tamp
+            parts = re.findall(r"\burl\s*\+=\s*(?:'([^']*)'|\"([^\"]*)\")", resp.text)
+            real = "".join((a or b).replace("&amp;", "&") for a, b in parts).strip()
+            if not real.startswith(("http://", "https://")):
+                return None
+            if "weixin.sogou.com" in (urlsplit(real).hostname or ""):
+                return None  # 停在搜狗自身页面(反爬/死链)
+            return real
+        # 百度: /link 302 到落地页
+        headers["Referer"] = "https://www.baidu.com/"
+        resp = session.get(url, headers=headers, timeout=timeout)
+        final = str(resp.url if resp.url is not None else "")
+        if not final.startswith(("http://", "https://")):
+            return None
+        if "baidu.com" in (urlsplit(final).hostname or ""):
+            return None  # 停在百度页面(安全验证/死链)
+        return final
+    except Exception as e:
+        logger.warning(f"解析中转链接失败: {url[:80]}... {e}")
+        return None
+
+
+# 从微信文章页提取"可长期使用"的永久直链的 HTML 特征。
+# 搜狗解析出的 mp.weixin.qq.com/s?src=11&timestamp&signature 是带签名/时效的
+# 中转密文 URL, 几小时后即"链接已失效"; 文章页里的 msg_link / og:url / canonical
+# 才是微信文章自身的永久地址(带 __biz&mid&sn 或 /s/<hash>), 可长期访问。
+_PERMANENT_URL_PATTERNS = (
+    re.compile(r'''var\s+msg_link\s*=\s*['"]([^'"]+)['"]''', re.IGNORECASE),
+    re.compile(r'''<meta[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["']''', re.IGNORECASE),
+    re.compile(r'''<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:url["']''', re.IGNORECASE),
+    re.compile(r'''<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']''', re.IGNORECASE),
+)
+
+
+def _extract_permanent_wechat_url(html: str) -> Optional[str]:
+    """从微信文章 HTML 里提取永久直链(msglink 优先, og:url/canonical 兜底)。"""
+    if not html:
+        return None
+    for pat in _PERMANENT_URL_PATTERNS:
+        m = pat.search(html)
+        if not m:
+            continue
+        u = unescape(m.group(1)).strip()
+        if u.startswith("//"):
+            u = "https:" + u
+        try:
+            host = urlsplit(u).hostname or ""
+        except Exception:
+            host = ""
+        if "mp.weixin.qq.com" in host:
+            return u
+    return None
+
+
+def _to_permanent_wechat_url(resolved: str, session: httpx.Client,
+                             timeout: float = 10.0) -> Optional[str]:
+    """把搜狗解析出的中转 mp 密文 URL 升级为文章永久直链。
+
+    中转 URL(src=11&timestamp&signature)带签名、很快过期; 真实打开文章页后,
+    从 msg_link/og:url/canonical 拿到永久地址才不会被"链接已失效"。取不到
+    (反爬/删文/验证页)返回 None, 调用方保留原 URL 或按死链处理。
+    """
+    if not resolved:
+        return None
+    headers = {
+        "User-Agent": UA_MOBILE,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    try:
+        resp = session.get(resolved, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        # 删文/违规/验证码等死链特征, 不再尝试拿永久链接
+        body = resp.text[:8000].lower()
+        if any(m in body for m in _DEAD_LINK_MARKERS):
+            return None
+        perma = _extract_permanent_wechat_url(resp.text)
+        if not perma or perma == resolved:
+            return None
+        return perma
+    except Exception as e:
+        logger.warning(f"解析公众号永久直链失败: {resolved[:60]}... {e}")
+        return None
+
+
+def _is_transitional_mp_url(url: str) -> bool:
+    """判断 url 是否是带时效 token 的公众号中转密文链接。
+
+    形如 mp.weixin.qq.com/s?src=11&timestamp=...&signature=...(path=/s 且带 query),
+    token 几小时后即过期, 用户点开会"链接已失效"。永久直链是 /s/<hash> 或带
+    __biz&mid&sn 的地址, 不在此列。
+    """
+    if not url:
+        return False
+    try:
+        u = urlsplit(url)
+    except Exception:
+        return False
+    if "mp.weixin.qq.com" not in (u.hostname or ""):
+        return False
+    path = (u.path or "").rstrip("/")
+    if path == "/s" and u.query:
+        return True
+    return False
 
 
 def _hash_key(source: str, url: str, title: str = "") -> str:
@@ -209,9 +653,13 @@ def search_baidu(keyword: str, session: httpx.Client, limit: int = 20) -> List[D
                     if snippet_match:
                         snippet = re.sub(r"<[^>]+>", "", snippet_match.group(1)).strip()
                     if title:
+                        resolved = _resolve_search_url(link, session)
+                        if not resolved:
+                            logger.warning(f"百度结果无法解析出直链, 丢弃: {title[:30]}...")
+                            continue
                         results.append({
                             "source": "baidu",
-                            "url": link,
+                            "url": resolved,
                             "title": title,
                             "author": None,
                             "published_at": None,
@@ -303,6 +751,14 @@ def search_wechat(keyword: str, session: httpx.Client, limit: int = 20) -> List[
                 # 提取公众号名称
                 author_match = re.search(r'<span class="all-time-y2">(.*?)</span>', block, re.DOTALL)
                 author = re.sub(r"<[^>]+>", "", author_match.group(1)).strip() if author_match else None
+                # 提取发布时间: 搜狗用 document.write(timeConvert('秒级时间戳'))输出
+                published_at = None
+                pub_match = re.search(r"timeConvert\('(\d+)'\)", block)
+                if pub_match:
+                    try:
+                        published_at = datetime.fromtimestamp(int(pub_match.group(1)))
+                    except (ValueError, OSError):
+                        published_at = None
                 # 提取摘要
                 snippet_match = re.search(r'<p class="txt-info"[^>]*>(.*?)</p>', block, re.DOTALL)
                 snippet = re.sub(r"<[^>]+>", "", snippet_match.group(1)).strip() if snippet_match else ""
@@ -310,12 +766,30 @@ def search_wechat(keyword: str, session: httpx.Client, limit: int = 20) -> List[
                 title = title.replace("<!--red_beg-->", "").replace("<!--red_end-->", "")
                 snippet = snippet.replace("<!--red_beg-->", "").replace("<!--red_end-->", "")
                 if title:
+                    resolved = _resolve_search_url(link, session)
+                    if not resolved:
+                        logger.warning(f"搜狗微信结果无法解析出直链, 丢弃: {title[:30]}...")
+                        continue
+                    # 公众号文章直链必须是 mp.weixin.qq.com, 其它落点视为中转/反爬
+                    # 死链, 丢弃(否则用户点开即"链接已失效")
+                    if (urlsplit(resolved).hostname or "") != "mp.weixin.qq.com":
+                        logger.warning(f"搜狗微信结果非 mp 直链, 丢弃: {title[:30]}...")
+                        continue
+                    # 升级为可长期访问的文章永久直链(中转 src=11&signature URL 会过期)
+                    perma = _to_permanent_wechat_url(resolved, session)
+                    if perma:
+                        resolved = perma
+                    elif _is_transitional_mp_url(resolved):
+                        # 拿不到永久直链、且仍是会过期的中转密文链接 → 丢弃。
+                        # 留着的话 token 过期后用户点开就是"链接已失效", 宁可少一条。
+                        logger.warning(f"搜狗微信中转密文链接无法解析永久直链, 丢弃: {title[:30]}...")
+                        continue
                     results.append({
                         "source": "wechat",
-                        "url": link,
+                        "url": resolved,
                         "title": title,
                         "author": author,
-                        "published_at": None,
+                        "published_at": published_at,
                         "content_snippet": snippet,
                     })
     except Exception as e:
@@ -337,24 +811,43 @@ SEARCH_ENGINES = {
 # 入库与去重
 # ============================================================
 
-def _load_existing_posts(session, since_days: int = 30) -> List[str]:
-    """加载最近 N 天的帖子哈希键用于去重"""
+def _load_existing_posts(session, since_days: int = 30) -> list:
+    """加载最近 N 天的帖子对象（用于去重）"""
     from backend.models import FreeModelPost
     cutoff = datetime.now() - timedelta(days=since_days)
-    posts = session.query(FreeModelPost).filter(FreeModelPost.fetched_at >= cutoff).all()
-    return [p.hash_key for p in posts]
+    return session.query(FreeModelPost).filter(FreeModelPost.fetched_at >= cutoff).all()
 
 
-def deduplicate_and_store(raw_posts: List[Dict], session) -> Tuple[List[Dict], int, int]:
+def deduplicate_and_store(raw_posts: List[Dict], session) -> Tuple[List[Dict], int, int, int]:
     """
     去重并入库。
-    返回: (新帖子列表, 新增数, 跳过数)
+    返回：(新帖子列表，新增数，跳过数，升级数)
+    升级: 标题签名命中的旧行若是中转死链(weixin.sogou.com/baidu /link,
+    token 过期即"链接已失效"), 用本次解析出的直链替换旧 URL。
     """
     from backend.models import FreeModelPost
-    
-    existing_hashes = set(_load_existing_posts(session))
+
+    existing_posts = _load_existing_posts(session)
+    existing_hashes = {p.hash_key for p in existing_posts}
+    # 已有帖子的标题签名（用于次级内容去重：同一篇文章换 URL/标题微变也合并；
+    # 太短的签名过于泛化，不参与自动去重，避免误并不同文章）
+    existing_title_keys = {
+        t for t in (_title_key(p.title) for p in existing_posts)
+        if t and len(t) >= MIN_TITLE_KEY_LEN
+    }
+    # 标题签名 → 最早入库的帖子(升级死链时用, 同签名多条取最早那条)
+    existing_title_map: dict = {}
+    for p in existing_posts:
+        k = _title_key(p.title)
+        if k and len(k) >= MIN_TITLE_KEY_LEN:
+            existing_title_map.setdefault(k, p)
+    # 用户手动标记的忽略列表：精确 hash + 抗 URL 变化的标题签名
+    # (传 session 让老版本 hash-only 忽略也能回填标题签名)
+    ignored_hashes = load_ignored_hashes()
+    ignored_title_keys = load_ignored_title_keys(session)
     new_posts = []
     skipped = 0
+    upgraded = 0
     
     for post in raw_posts:
         source = post.get("source", "")
@@ -366,31 +859,57 @@ def deduplicate_and_store(raw_posts: List[Dict], session) -> Tuple[List[Dict], i
         
         # 计算哈希键
         hk = _hash_key(source, url, title)
+        tkey = _title_key(title)
         
-        # 首级去重: 哈希键已存在
+        # 过滤：用户手动标记为忽略的帖子（精确 hash 或标题签名命中都跳过，
+        # 这样带时效 token 的 URL 每天变化也不会绕开忽略）
+        if (hk in ignored_hashes) or (tkey and tkey in ignored_title_keys):
+            skipped += 1
+            logger.debug(f"跳过已忽略的帖子：{title[:30]}...")
+            continue
+        
+        # 首级去重：哈希键已存在
         if hk in existing_hashes:
             skipped += 1
             continue
         
-        # 次级去重: 内容相似度（与已有帖子的标题+摘要比较）
-        is_dup = False
-        for ex_hk in existing_hashes:
-            # 简化: 只比较 URL 是否相同（精确匹配）
-            if ex_hk.startswith(f"{source}|{url}|"):
-                is_dup = True
-                break
-        if is_dup:
+        # 次级去重: 标题签名已存在（同一篇文章换了 URL/标题微变 → 也视为重复，
+        # 避免每天重复入库同一批帖子，报告里全是旧内容）
+        if tkey and len(tkey) >= MIN_TITLE_KEY_LEN and tkey in existing_title_keys:
+            # 旧记录若是时效敏感的中转死链, 直接跳过会让失效链接永远留在报告里;
+            # 用本次解析出的直链升级旧行
+            if _upgrade_stale_link(existing_title_map, tkey, source, url, title):
+                upgraded += 1
+                logger.info(f"升级存量死链为直链: {title[:30]}...")
+                continue
             skipped += 1
+            logger.debug(f"跳过标题重复的帖子：{title[:30]}...")
             continue
         
         # 创建新帖子记录
-        published = post.get("published_at")
-        if isinstance(published, str):
-            try:
-                published = datetime.fromisoformat(published.replace("Z", "+00:00"))
-            except:
-                published = None
-        
+        published = _coerce_published_at(post.get("published_at"))
+
+        # 入库前真实可达性验证: 中转链接在入库前已由 _resolve_search_url 解析,
+        # 解析后的直链仍是"链接已失效"高发区(公众号被删/需登录/token过期等),
+        # 真实 GET 一次确认可读后再入库, 避免把死链发给用户。
+        with _make_session() as _v_http:
+            if not verify_link_live(url, _v_http):
+                skipped += 1
+                logger.debug(f"跳过不可达/已失效的链接: {title[:30]}...")
+                continue
+
+        # 时效过滤: 文章类来源必须有发表时间, 否则新旧不明直接丢弃
+        if source in ARTICLE_SOURCES and not isinstance(published, datetime):
+            skipped += 1
+            logger.debug(f"跳过无发表时间的帖子: {title[:30]}...")
+            continue
+        # 时效过滤: 明确发表时间且已超过时效窗口的帖子直接丢弃(免费 API 已失效/过期)
+        if isinstance(published, datetime) and not is_post_fresh(
+                SimpleNamespace(published_at=published, fetched_at=datetime.now())):
+            skipped += 1
+            logger.debug(f"跳过超过{MAX_POST_AGE_DAYS}天的失效帖子: {title[:30]}...")
+            continue
+
         new_post = FreeModelPost(
             source=source,
             url=url,
@@ -405,15 +924,119 @@ def deduplicate_and_store(raw_posts: List[Dict], session) -> Tuple[List[Dict], i
         session.add(new_post)
         new_posts.append(new_post)
         existing_hashes.add(hk)
+        if tkey and len(tkey) >= MIN_TITLE_KEY_LEN:
+            existing_title_keys.add(tkey)
     
     try:
         session.commit()
     except Exception as e:
         logger.error(f"入库失败: {e}")
         session.rollback()
-        return [], 0, len(raw_posts)
+        return [], 0, len(raw_posts), 0
     
-    return new_posts, len(new_posts), skipped
+    return new_posts, len(new_posts), skipped, upgraded
+
+
+def _upgrade_stale_link(existing_title_map: dict, tkey: str, source: str,
+                        url: str, title: str) -> bool:
+    """标题签名命中的旧行是中转死链时, 用解析后的直链替换旧 URL。
+
+    旧版把搜索引擎的中转链接(带时效 token)直接入库, token 过期即"链接已失效";
+    同一篇文章再次被抓到直链时, 用直链升级旧行。返回是否发生升级,
+    否则调用方按常规去重跳过。
+    """
+    if any(h in url for h in REDIRECT_HOSTS):
+        # 新链接自己仍是中转 → 没有升级价值, 按重复跳过
+        return False
+    p = existing_title_map.get(tkey)
+    if p is None:
+        return False
+    old = p.url or ""
+    if any(h in old for h in REDIRECT_HOSTS) and old != url:
+        p.url = url
+        p.hash_key = _hash_key(source, url, title)
+        return True
+    return False
+
+
+# ============================================================
+# 存量死链回填
+# ============================================================
+
+# 每轮回填上限: 早期入库的中转链接逐条解析较慢, 限制数量避免拖慢定时任务
+# 从 150 提到 300: 加快清掉存量过期密文链接(每条仅一次网络请求, 数秒)
+MAX_LINK_REFRESH = 300
+
+
+def _refresh_dead_links(session, limit: int = MAX_LINK_REFRESH) -> Tuple[int, int, int]:
+    """回填存量死链: 把已入库的中转链接(weixin.sogou.com / baidu.com/link)
+    重新解析为直链并更新 url + hash_key。
+
+    早期版本把搜索结果页的中转链接直接入库, token 过期后用户点开即"链接已失效"。
+    解析不出的行(反爬/真死链/落地重复)直接删除——留着只会继续坑用户点开失效。
+    返回 (成功更新数, 失败数, 删除数)。
+    """
+    from sqlalchemy import or_
+    from backend.models import FreeModelPost
+
+    posts = session.query(FreeModelPost).filter(
+        or_(
+            FreeModelPost.url.like("%weixin.sogou.com%"),
+            FreeModelPost.url.like("%baidu.com/link%"),
+            FreeModelPost.url.like("%mp.weixin.qq.com/s?%"),  # 带 src=&signature 的中转密文链接
+        )
+    ).order_by(FreeModelPost.fetched_at.desc()).limit(limit).all()
+    if not posts:
+        return 0, 0, 0
+
+    updated = failed = removed = 0
+    used: set = set()  # 本批已占用的 (source, url), 防多条死链解析到同一落地页撞唯一约束
+    with _make_session() as http:
+        for p in posts:
+            # 中转 mp 密文链接(带 src=&timestamp&signature, 会过期) → 升级成永久直链
+            is_mp_transitional = ("mp.weixin.qq.com/s?" in (p.url or "")) and ("src=" in (p.url or ""))
+            if is_mp_transitional:
+                resolved = _to_permanent_wechat_url(p.url, http)
+                if not resolved or resolved == p.url:
+                    # 中转密文链接 token 必过期, 拿不到永久直链 = 用户必点开失效。
+                    # 删除, 不留必失效链接; 且搜索侧已不再入这类链接, 不会重新产生。
+                    session.delete(p)
+                    removed += 1
+                    continue
+            else:
+                resolved = _resolve_search_url(p.url, http)
+                if not resolved or resolved == p.url:
+                    # 解析不出直链 = 真死链, 删除
+                    session.delete(p)
+                    removed += 1
+                    continue
+            key = (p.source, resolved)
+            if key in used:
+                session.delete(p)
+                removed += 1
+                continue
+            # (source, url) 有唯一约束: 其他行已是该直链则删除重复行
+            clash = session.query(FreeModelPost.id).filter(
+                FreeModelPost.source == p.source,
+                FreeModelPost.url == resolved,
+                FreeModelPost.id != p.id,
+            ).first()
+            if clash:
+                session.delete(p)
+                removed += 1
+                continue
+            used.add(key)
+            p.url = resolved
+            p.hash_key = _hash_key(p.source, resolved, p.title)
+            updated += 1
+    try:
+        session.commit()
+    except Exception as e:
+        # (source, url) 唯一约束冲突概率极低, 冲突时回滚并丢弃本轮更新
+        logger.error(f"死链回填入库失败: {e}")
+        session.rollback()
+        return 0, 0, len(posts)
+    return updated, failed, removed
 
 
 # ============================================================
@@ -670,7 +1293,22 @@ def run_free_model_search(
     
     try:
         session = get_session()
-        
+
+        # 0. 回填存量死链(早期入库的中转链接, token 过期即"链接已失效")
+        try:
+            refreshed, refresh_failed, removed = _refresh_dead_links(session)
+            result["links_refreshed"] = refreshed
+            result["links_refresh_failed"] = refresh_failed
+            result["links_removed"] = removed
+            if refreshed or removed:
+                logger.info(f"死链回填: 更新 {refreshed} 条, 删除 {removed} 条, 失败 {refresh_failed} 条")
+        except Exception as e:
+            result["links_refreshed"] = 0
+            result["links_refresh_failed"] = 0
+            result["links_removed"] = 0
+            result["errors"].append(f"死链回填: {e}")
+            logger.warning(f"死链回填异常: {e}")
+
         # 1. 搜索所有来源
         raw_posts = []
         with _make_session() as http_session:
@@ -691,9 +1329,10 @@ def run_free_model_search(
         result["total_found"] = len(raw_posts)
         
         # 2. 去重并入库
-        new_posts, added, skipped = deduplicate_and_store(raw_posts, session)
+        new_posts, added, skipped, upgraded = deduplicate_and_store(raw_posts, session)
         result["added"] = added
         result["skipped"] = skipped
+        result["upgraded"] = upgraded
         
         # 3. LLM 评估（可选）
         evaluations = []

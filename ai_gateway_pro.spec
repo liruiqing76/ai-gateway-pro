@@ -133,4 +133,9 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # 固定解包目录(不再是 %TEMP%/_MEI* 随机路径): 安全软件(火绒等)常隔离
+    # %TEMP% 里解包出的 onnxruntime 原生二进制, 导致签到 OCR 失效"永远没返回"。
+    # 固定到项目根 runtime_tmp/ 后, 把该目录加入信任区即可一劳永逸;
+    # desktop.py 启动时也会自检 OCR 组件是否被杀软删除。
+    runtime_tmpdir=str(BASE / 'runtime_tmp'),
 )

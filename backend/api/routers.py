@@ -21,7 +21,7 @@ async def list_routers(user: User = Depends(get_current_user_from_jwt)):
     """列出用户的所有路由组"""
     session = get_session()
     try:
-        rows = session.query(Router).filter_by(user_id=user.id).all()
+        rows = session.query(Router).filter_by(user_id=user.id)            .order_by(Router.name, Router.id).all()
         data = {r.name: {"models": r.models or [], "strategy": r.strategy or "quality"} for r in rows}
         return {"data": data}
     finally:
@@ -80,7 +80,7 @@ async def init_default_routers(user: User = Depends(get_current_user_from_jwt)):
     try:
         providers = session.query(Provider).filter_by(user_id=user.id, enabled=True).all()
         from backend.core.router_group import build_router_groups
-        groups = build_router_groups(providers)
+        groups = build_router_groups(providers, user_id=user.id)
         created = []
         for name, models in groups.items():
             if not models:

@@ -174,14 +174,12 @@
     "base_url": "https://developer.amd.com.cn/radeon/api/v1",
     "models": [
       "DeepSeek-V4-Flash",
-      "Qwen3.6-35B",
-      "MiniCPM-3B",
-      "MiniCPM-4B"
+      "Qwen3.8-Flash-Next"
     ],
-    "free_only": true,
+    "free_only": false,
     "signup_url": "https://developer.amd.com.cn/radeon/tokenfactory",
     "config_url": "https://developer.amd.com.cn/radeon/tokenfactory",
-    "notes": "AMD Token Factory: 每天白送 $10 额度, DeepSeek V4 Flash 免费调。邮箱注册即可,国内镜像不用翻墙。注意首字延迟约 22s, 输出 28 t/s。OpenAI 兼容。",
+    "notes": "AMD Token Factory: 每天白送 $10 额度(按量计费, 模型带定价并非免费, 模板不要标 free_only)。邮箱注册即可,国内镜像不用翻墙。注意首字延迟约 22s, 输出 28 t/s。OpenAI 兼容。",
     "tags": [
       "免费",
       "AMD",

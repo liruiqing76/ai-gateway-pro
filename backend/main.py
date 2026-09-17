@@ -34,6 +34,8 @@ from backend.api.license import router as license_router
 from backend.api.experience import router as experience_router
 from backend.api.free_sources import router as free_sources_router
 from backend.api.free_model_search import router as free_model_search_router
+from backend.api.downed_models import router as downed_models_router
+from backend.api.dead_model_api import router as dead_model_router
 
 # 日志: 控制台 + 文件(exe 打包后 windowed 无 stderr, 500 堆栈只能靠文件日志排查)
 _LOG_ROOT = (Path(os.environ.get("GW_DB_PATH", "")).resolve().parent.parent
@@ -123,7 +125,7 @@ async def lifespan(app: FastAPI):
 
     speed_task = asyncio.create_task(_speed_poll_loop())
     summary_task = asyncio.create_task(_daily_summary_loop())
-    summary_task = asyncio.create_task(_daily_summary_loop())
+
 
     # 免费源自动同步: 对齐 CX-AIRouter 的"每6小时扫描全网免费源"
     from backend.core.free_sources import sync_free_sources
@@ -180,6 +182,37 @@ async def lifespan(app: FastAPI):
                 logger.warning("opencode 健康检测异常: %s", e)
             await asyncio.sleep(settings.ZEN_HEALTH_CHECK_MINUTES * 60)
 
+    # b.ai 免费模型: 自动发现同步 + 持续健康检测(与 opencode zen 同模式)
+    from backend.core.bai_sources import sync_bai_free_models, health_check_bai_models
+
+    async def _bai_sync_loop():
+        if not settings.B_AI_AUTO_SYNC:
+            logger.info("b.ai 免费模型同步未启用")
+            return
+        await asyncio.sleep(240)  # 等服务稳定
+        while True:
+            try:
+                r = await asyncio.to_thread(sync_bai_free_models)
+                logger.info("b.ai 免费模型同步: 发现%d个, 可用%d个, 不可用%d",
+                            r.get("total_free", 0), len(r.get("usable", [])),
+                            len(r.get("unusable", {})))
+            except Exception as e:
+                logger.warning("b.ai 免费模型同步异常: %s", e)
+            await asyncio.sleep(settings.B_AI_SYNC_HOURS * 3600)
+
+    async def _bai_health_loop():
+        if not settings.B_AI_AUTO_SYNC:
+            return
+        await asyncio.sleep(540)  # 首次健康检测等同步完成后
+        while True:
+            try:
+                r = await asyncio.to_thread(health_check_bai_models)
+                if r.get("removed"):
+                    logger.info("b.ai 健康检测: 移出不可用模型 %s", r["removed"])
+            except Exception as e:
+                logger.warning("b.ai 健康检测异常: %s", e)
+            await asyncio.sleep(settings.B_AI_HEALTH_CHECK_MINUTES * 60)
+
     # 免费模型帖子搜索: 每天定时爬取 Gitee/GitHub/百度/今日头条/微信公众号上
     # "免费模型注册"相关帖子, 去重入库 + LLM 评估 + 生成 Markdown 报告。
     from backend.core.free_model_search import run_free_model_search
@@ -214,6 +247,48 @@ async def lifespan(app: FastAPI):
                 continue
             # delay 已含"距下次 23:00 的秒数", 循环回到顶部会重新计算,
             # 无需再额外 sleep 86400(否则会变成 48 小时间隔)
+
+    # 死模型每日自动复检: NVIDIA 等上游偶发故障(平台 502/断连/读超时)会把
+    # "其实还活着"的模型误拉黑进 dead_models(永久), 且拉黑后从不复查, 导致
+    # 可用模型数单向缩水。每天定时对所有拉黑记录做 1-token 真实探测, 返回
+    # 200 的自动解封并放回渠道/路由组; 启动约 10 分钟后先补跑一轮, 部署后
+    # 无需等次日即可平反存量误杀。探测含网络请求, 放后台线程不阻塞事件循环。
+    async def _dead_model_recovery_loop():
+        if not settings.DEAD_MODEL_RECOVERY_ENABLED:
+            logger.info("死模型自动复检未启用")
+            return
+        from backend.core.dead_model_recovery import recover_dead_models
+
+        def _run_once() -> dict:
+            r = recover_dead_models()
+            logger.info(
+                "死模型自动复检: 探测%d个, 复活%d个(%s), 仍死%d, 未开通%d, "
+                "状态不明%d, 跳过停用渠道%d, 清孤儿%d",
+                r["probed"], len(r["revived"]), ",".join(r["revived"]) or "-",
+                r["dead"], r["no_access"], r["uncertain"],
+                r["skipped_disabled"], r["orphan_removed"],
+            )
+            return r
+
+        # 启动补跑: 等服务稳定后先平反一轮存量误杀
+        await asyncio.sleep(settings.DEAD_MODEL_RECOVERY_START_DELAY)
+        try:
+            await asyncio.to_thread(_run_once)
+        except Exception as e:
+            logger.warning("死模型自动复检(启动补跑)异常: %s", e)
+        while True:
+            try:
+                HH, MM = (settings.DEAD_MODEL_RECOVERY_TIME or "04:20").split(":")
+                target = int(HH) * 3600 + int(MM) * 60
+                now = int(datetime.now().hour) * 3600 + int(datetime.now().minute) * 60
+                delay = (target - now) % 86400
+                if delay == 0:
+                    delay = 86400
+                await asyncio.sleep(delay)
+                await asyncio.to_thread(_run_once)
+            except Exception as e:
+                logger.warning("死模型自动复检异常: %s", e)
+                await asyncio.sleep(3600)
 
     # 每日额度重置: 魔搭等渠道按天发放免费额度, 每天 00:10 清空质量/熔断统计,
     # 让额度恢复的渠道自动重新参与路由(白天额度用尽则由熔断/排序自动绕开);
@@ -262,8 +337,11 @@ async def lifespan(app: FastAPI):
                 logger.warning("每日额度重置异常: %s", e)
 
     quota_reset_task = asyncio.create_task(_daily_quota_reset_loop())
+    dead_recovery_task = asyncio.create_task(_dead_model_recovery_loop())
     zen_sync_task = asyncio.create_task(_zen_sync_loop())
     zen_health_task = asyncio.create_task(_zen_health_loop())
+    bai_sync_task = asyncio.create_task(_bai_sync_loop())
+    bai_health_task = asyncio.create_task(_bai_health_loop())
     free_model_search_task = asyncio.create_task(_free_model_search_loop())
     yield
     speed_task.cancel()
@@ -271,16 +349,22 @@ async def lifespan(app: FastAPI):
     sync_task.cancel()
     zen_sync_task.cancel()
     zen_health_task.cancel()
+    bai_sync_task.cancel()
+    bai_health_task.cancel()
     quota_reset_task.cancel()
     free_model_search_task.cancel()
+    dead_recovery_task.cancel()
     try:
         await speed_task
         await summary_task
         await sync_task
         await zen_sync_task
         await zen_health_task
+        await bai_sync_task
+        await bai_health_task
         await quota_reset_task
         await free_model_search_task
+        await dead_recovery_task
     except asyncio.CancelledError:
         pass
     logger.info("智能网关 已停止")
@@ -336,6 +420,8 @@ app.include_router(license_router)
 app.include_router(experience_router)
 app.include_router(free_sources_router)
 app.include_router(free_model_search_router)
+app.include_router(downed_models_router)
+app.include_router(dead_model_router)
 
 
 @app.get("/")

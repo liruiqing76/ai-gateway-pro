@@ -8,6 +8,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def disable_spread(monkeypatch):
+    """本文件验证确定性排序语义 → 关闭加权随机分发(分布正确性见 test_spread.py)"""
+    from backend.core import proxy
+    monkeypatch.setattr(proxy.settings, "SPREAD_WEIGHTED_ENABLED", False)
+
+
 class FakeProvider:
     def __init__(self, name, models, disabled_models=None):
         self.id = abs(hash(name)) % 1000

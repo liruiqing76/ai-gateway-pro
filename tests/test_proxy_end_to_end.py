@@ -8,6 +8,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def disable_spread(monkeypatch):
+    """本文件验证端到端确定性链路(候选顺序/回退/trace) → 关闭加权随机分发
+    (分发分布正确性见 test_spread.py; 轮询语义见 test_round_robin.py)"""
+    from backend.core import proxy
+    monkeypatch.setattr(proxy.settings, "SPREAD_WEIGHTED_ENABLED", False)
 from fastapi.testclient import TestClient
 
 

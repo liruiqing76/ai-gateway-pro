@@ -36,9 +36,11 @@ def no_breaker(monkeypatch):
     monkeypatch.setattr(circuit_breaker, "is_open", lambda k: False)
 
 
-def test_round_robin_rotates_first_candidate(no_breaker):
+def test_round_robin_rotates_first_candidate(no_breaker, monkeypatch):
     providers = [_provider("A", ["a1", "a2"]), _provider("B", ["b1"])]
     routers = {"g": ["A-a1", "A-a2", "B-b1"]}
+    # 本测试专测确定性轮询语义 → 关闭加权分发(其分布正确性由 test_spread.py 覆盖)
+    monkeypatch.setattr(proxy.settings, "SPREAD_WEIGHTED_ENABLED", False)
     firsts = []
     for _ in range(9):
         cands = proxy.pick_available_models(providers, "g", routers, strategy="fastest")

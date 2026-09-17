@@ -66,7 +66,9 @@ class CheckinScheduler:
     }
 
     def __init__(self, config_path: Path = None):
-        self.config_path = config_path or (Path(__file__).resolve().parent / "schedule_config.json")
+        # 打包后 __file__ 指向 _MEIPASS 临时目录, 配置写那里重启即丢(用户改的
+        # 签到时间"总被重置")。默认改到持久状态目录(exe 旁 data/checkin_state)。
+        self.config_path = config_path or (get_state_dir() / "schedule_config.json")
         self.config = self.load_config()
         self._jobs = {}  # app_name -> APScheduler job
 
@@ -163,8 +165,18 @@ class CheckinScheduler:
                     output = buf.getvalue().strip()
                     if output:
                         return output[-800:]
-                except Exception:
+                except SystemExit as e:
+                    # 脚本 sys.exit() 是 BaseException, 必须兜住并把退出原因
+                    # 返回给调度日志, 否则作业静默失败、连日志都没有
                     os.chdir(old_cwd) if old_cwd != os.getcwd() else None
+                    output = buf.getvalue().strip()
+                    tail = "签到脚本退出: %s" % (e.code if e.code is not None else "无消息")
+                    return (output + "\n" + tail)[-800:] if output else tail
+                except BaseException as e:
+                    os.chdir(old_cwd) if old_cwd != os.getcwd() else None
+                    output = buf.getvalue().strip()
+                    tail = "签到异常: %r" % (e,)
+                    return (output + "\n" + tail)[-800:] if output else tail
                 # 从签到日志读取最近几行
                 log_file = get_state_dir() / "checkin.log"
                 if log_file.exists():

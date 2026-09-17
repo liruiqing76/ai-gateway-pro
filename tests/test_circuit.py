@@ -154,3 +154,112 @@ class TestQuotaExhaustedCooldown:
         cb.record_quota_exhausted("k")
         remaining = st.open_until - time.time()
         assert 115 <= remaining <= 125
+
+
+class TestDeadModelAutoCooldown:
+    """上游 404(模型下架) → 连续 3 次判死 → 24h 长冷却(而非 60s 短冷却)"""
+
+    def test_first_404_suspect_not_open_long(self):
+        """1 次 404: 不算死模型, 不触发 24h 长冷却(此时只有普通 record_fail 的 60s)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+        assert not cb.is_open("NVIDIA||kimi-k2.6")
+        assert cb.is_dead_suspect("NVIDIA||kimi-k2.6")
+
+    def test_three_404_marks_dead_long_cooldown(self):
+        """连续 3 次 404 → 判定死模型, 24h 长冷却, 仅第 3 次返回 True"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is True
+        assert cb.is_open("NVIDIA||kimi-k2.6")
+        st = cb._states["NVIDIA||kimi-k2.6"]
+        remaining = st.open_until - time.time()
+        # 24h 长冷却(远大于普通 60s 熔断)
+        assert remaining > 23 * 3600
+        # 判死后 404 计数清零, 冷却期内再记不会重复触发
+        assert not cb.is_dead_suspect("NVIDIA||kimi-k2.6")
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+
+    def test_404_interrupted_by_success_resets(self):
+        """2 次 404 后成功 → 计数清零, 不会判死"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_not_found("NVIDIA||kimi-k2.6")
+        cb.record_not_found("NVIDIA||kimi-k2.6")
+        cb.record_success("NVIDIA||kimi-k2.6")
+        assert not cb.is_dead_suspect("NVIDIA||kimi-k2.6")
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is False
+        # 3 次(重置后重新累计)后才判死
+        assert cb.record_not_found("NVIDIA||kimi-k2.6") is True
+
+    def test_dead_cooldown_expires(self):
+        """长冷却到期后自动恢复(模型若恢复上线可重新参与路由)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_not_found("k")
+        cb.record_not_found("k")
+        cb.record_not_found("k")
+        st = cb._states["k"]
+        st.open_until = time.time() - 1  # 模拟 24h 已过
+        assert not cb.is_open("k")
+
+
+class TestTimeoutCooldown:
+    """挂死型超时冷却: 比普通失败更长的指数退避(90s 起, 上限 1800s)。
+
+    背景: 超时的模型(连接后长时间无数据)60s 短熔断恢复后又被路由,
+    每笔请求白烧一次超时(实测非流式 120s / 流式 30s), 拖垮整条链路。
+    """
+
+    def test_first_timeout_90s(self):
+        """第一次超时 → 直接打开熔断, 冷却 90s(远大于普通失败 60s)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_timeout_fail("NVIDIA||model-a")
+        assert cb.is_open("NVIDIA||model-a")
+        st = cb._states["NVIDIA||model-a"]
+        remaining = st.open_until - time.time()
+        assert 85 <= remaining <= 95
+
+    def test_second_timeout_doubles(self):
+        """第二次连续超时 → 冷却翻倍到 180s"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_timeout_fail("NVIDIA||model-a")
+        cb.record_timeout_fail("NVIDIA||model-a")
+        st = cb._states["NVIDIA||model-a"]
+        remaining = st.open_until - time.time()
+        assert 175 <= remaining <= 185
+
+    def test_fourth_timeout_caps_at_1800(self):
+        """连续超时冷却指数递增, 上限 1800s(30min)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        for _ in range(10):
+            cb.record_timeout_fail("NVIDIA||model-a")
+        st = cb._states["NVIDIA||model-a"]
+        remaining = st.open_until - time.time()
+        assert remaining <= 1801
+
+    def test_success_resets_timeout_escalation(self):
+        """成功后超时计数清零, 熔断恢复(模型恢复后重新参与路由)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_timeout_fail("NVIDIA||model-a")
+        cb.record_timeout_fail("NVIDIA||model-a")
+        cb.record_success("NVIDIA||model-a")
+        assert not cb.is_open("NVIDIA||model-a")
+        assert cb._states["NVIDIA||model-a"].timeout_count == 0
+
+    def test_timeout_opens_immediately_even_below_fail_threshold(self):
+        """单次超时即打开(不等连续失败阈值)"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_timeout_fail("NVIDIA||model-a")
+        assert cb.is_open("NVIDIA||model-a")
+
+    def test_429_and_timeout_backoff_independent(self):
+        """限流退避与超时退避各自独立计数, 互不干扰"""
+        cb = CircuitBreaker(fail_threshold=3, recovery_seconds=60)
+        cb.record_rate_limit("NVIDIA||model-a")       # 30s
+        cb.record_timeout_fail("NVIDIA||model-a")     # 90s → 更严重者覆盖
+        st = cb._states["NVIDIA||model-a"]
+        remaining = st.open_until - time.time()
+        assert 85 <= remaining <= 95
+        assert st.rate_limit_count == 1
+        assert st.timeout_count == 1

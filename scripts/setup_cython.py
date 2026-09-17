@@ -25,6 +25,7 @@ MODULES = [
     ("backend.core.free_sources", "backend/core/free_sources.py"),
     ("backend.core.vision", "backend/core/vision.py"),
     ("backend.core.trace", "backend/core/trace.py"),
+    ("backend.core.dead_model_recovery", "backend/core/dead_model_recovery.py"),
     ("backend.auth.security", "backend/auth/security.py"),
     ("backend.auth.middleware", "backend/auth/middleware.py"),
     ("backend.billing.plans", "backend/billing/plans.py"),

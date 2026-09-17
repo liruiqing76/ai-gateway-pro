@@ -30,6 +30,9 @@ class ProviderCreate(BaseModel):
     models: list[str] = []
     free_only: bool = True
     auto_fetch: bool = True  # 未手填模型时自动请求上游 /models 拉取
+    # 流量整形覆盖(null = 用全局默认): 渠道并发上限 / 同一模型最小间隔(毫秒)
+    max_concurrency: int | None = None
+    min_interval_ms: int | None = None
 
 
 class ProviderUpdate(BaseModel):
@@ -38,6 +41,8 @@ class ProviderUpdate(BaseModel):
     api_key: str | None = None
     models: list[str] | None = None
     enabled: bool | None = None
+    max_concurrency: int | None = None
+    min_interval_ms: int | None = None
 
 
 # ============================================================
@@ -140,22 +145,27 @@ async def fetch_upstream_models(base_url: str, api_key: str,
 
 
 def rebuild_user_routers(session, user_id: int) -> list[str]:
-    """根据用户全部启用渠道重建默认路由组(快速/日常/识图), 返回更新的组名"""
-    from backend.core.router_group import build_router_groups
+    """根据当前启用渠道补齐默认路由组(quick/high_quality/vision)。
 
+    ★ 只创建缺失的组, 绝不覆盖已存在的组: 用户在界面手动调整过的路由组
+      (增删模型)必须原样保留 —— 旧实现每次添加/编辑/刷新/测试渠道都会用
+      渠道模型重新生成并覆盖同名组, 导致用户手动删掉的下架模型(404 的
+      kimi-k3 / AMD GLM-5.2 等)被"自动复活"。想按当前渠道整体重建请用
+      界面的"自动分类"(POST /api/routers/init-defaults), 那是明确的覆盖动作。
+    """
+    from backend.core.router_group import build_router_groups
     providers = session.query(Provider).filter_by(user_id=user_id, enabled=True).all()
-    groups = build_router_groups(providers)
-    updated = []
+    groups = build_router_groups(providers, user_id=user_id)
+    created = []
     for name, models in groups.items():
         if not models:
             continue
         existing = session.query(Router).filter_by(user_id=user_id, name=name).first()
         if existing:
-            existing.models = models
-        else:
-            session.add(Router(user_id=user_id, name=name, models=models, strategy="quality"))
-        updated.append(name)
-    return updated
+            continue  # 已有组绝不覆盖(用户手动调整优先)
+        session.add(Router(user_id=user_id, name=name, models=models, strategy="quality"))
+        created.append(name)
+    return created
 
 
 # ============================================================
@@ -175,6 +185,8 @@ async def list_providers(user: User = Depends(get_current_user_from_jwt)):
                 "models": p.models or [],
                 "disabled_models": p.disabled_models or [],
                 "free_only": p.free_only,
+                "max_concurrency": p.max_concurrency,
+                "min_interval_ms": p.min_interval_ms,
                 "enabled": p.enabled,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
                 # 每个渠道的 模型名 -> 上下文长度 映射, 后端统一来源
@@ -265,6 +277,8 @@ async def get_provider(
             "models": p.models or [],
             "disabled_models": p.disabled_models or [],
             "free_only": p.free_only,
+            "max_concurrency": p.max_concurrency,
+            "min_interval_ms": p.min_interval_ms,
             "enabled": p.enabled,
         }
     finally:
@@ -309,6 +323,8 @@ async def create_provider(
                 models=models,
                 disabled_models=[],
                 free_only=data.free_only,
+                max_concurrency=data.max_concurrency,
+                min_interval_ms=data.min_interval_ms,
                 enabled=True,
             )
             session.add(provider)
@@ -375,6 +391,11 @@ async def apply_template(
 
     session = get_session()
     try:
+        # 死模型黑名单: 拉黑过的模型不落库(模板重装/刷新也不会复活)
+        from backend.core.dead_models import banned_keys
+        banned = banned_keys(user.id)
+        models = [m for m in models if f"{tpl['name']}||{m}" not in banned]
+
         # 重名保护: 模板渠道已存在时给出明确提示(否则裸 500 前端只会显示"添加失败")
         exists = session.query(Provider).filter_by(
             user_id=user.id, name=tpl["name"]
@@ -516,6 +537,9 @@ async def refresh_provider_models(
             models = await fetch_upstream_models(p.base_url, api_key,
                                                  free_only=p.free_only)
             models = filter_chat_models(models)  # 过滤非对话模型, 防止渠道被全量污染
+            from backend.core.dead_models import banned_keys
+            banned = banned_keys(user.id)
+            models = [m for m in models if f"{p.name}||{m}" not in banned]
             p.models = models  # 过滤结果必须落库(此前漏赋值导致刷新按钮假成功)
         session.commit()
 
@@ -560,6 +584,10 @@ async def update_provider(
             models_changed = True
         if data.enabled is not None:
             p.enabled = data.enabled
+        if data.max_concurrency is not None:
+            p.max_concurrency = data.max_concurrency
+        if data.min_interval_ms is not None:
+            p.min_interval_ms = data.min_interval_ms
 
         session.commit()
         # 模型/启用状态变化 → 重建路由组

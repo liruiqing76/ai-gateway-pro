@@ -333,13 +333,14 @@ def template_score(img, tmpl_path, band):
 
 def ensure_menu_open(win, ax, ay, region, attempts=3):
     """确保头像菜单处于打开状态，返回菜单截图。
-    头像点击是切换，若 OCR 没找到签到行则再点一次。"""
+    头像点击是切换，若 OCR 没找到签到行则再点一次。
+    已签时菜单里可能没有签到行，检测到"今日已签"同样算打开成功。"""
     last_img = None
     for i in range(attempts):
         pyautogui.click(ax, ay)
         time.sleep(2.5)
         last_img = pyautogui.screenshot(region=region).convert("RGB")
-        if find_checkin_row(last_img)[0] is not None:
+        if find_checkin_row(last_img)[0] is not None or is_signed(last_img)[0]:
             return last_img
     return last_img
 
@@ -378,13 +379,23 @@ def calibrate():
 
 # ---------- 自动启动目标程序 ----------
 def launch_if_not_running(exe_name: str, exe_path: str | None = None) -> bool:
-    """检测进程是否存在，不存在则尝试启动。返回 True 表示当前已在运行。"""
+    """检测进程是否存在，不存在则尝试启动。返回 True 表示当前已在运行。
+    进程名匹配优先用 exe_path 的文件名（Trae 已改版改名 TRAE SOLO CN），
+    找不到路径时退回传入的 exe_name。"""
+    names = []
+    if exe_path:
+        base = os.path.basename(exe_path)
+        if base.lower().endswith(".exe"):
+            names.append(base[:-4])
+    if exe_name:
+        names.append(exe_name)
     try:
-        output = subprocess.check_output(["tasklist"], text=True, encoding="gbk", errors="replace")
-        if exe_name.lower() in output.lower():
-            return True
+        output = subprocess.check_output(["tasklist"], text=True, encoding="gbk", errors="replace").lower()
     except Exception:
-        pass
+        output = ""
+    for n in names:
+        if n and n.lower() in output:
+            return True
     if exe_path:
         from pathlib import Path
         if Path(exe_path).exists():
@@ -408,6 +419,8 @@ def run(dry=False):
 
     backend, name = get_ocr_engine()
     if not backend:
+        log("缺少 OCR 引擎(rapidocr/paddle)。若为打包版, 多为安全软件隔离了 "
+            "onnxruntime 组件; 请将 exe 加入信任区后重启应用。")
         sys.exit("缺少 OCR 引擎。请先安装 rapidocr_onnxruntime(pip install rapidocr_onnxruntime) 或 paddleocr(pip install paddleocr)")
 
     if already_today():
@@ -420,7 +433,7 @@ def run(dry=False):
         trae_exe = find_trae_exe()
     except ImportError:
         trae_exe = None
-    launch_if_not_running("TraeWork CN", trae_exe)
+    launch_if_not_running("TRAE SOLO CN", trae_exe)
 
     win = find_window(cfg["window_title"])
     if not win:
@@ -437,6 +450,13 @@ def run(dry=False):
     os.makedirs(SHOTS, exist_ok=True)
 
     img = ensure_menu_open(win, ax, ay, region)
+    # 先查已签标志再查签到行: 已签时菜单里可能不再显示签到行,
+    # 用旧的顺序会误报"未定位到签到行"。
+    signed, reason = is_signed(img)
+    if signed:
+        mark_today()
+        log("✅ 检测到已签到（%s），无需重复点击。" % reason)
+        return
     text, box = find_checkin_row(img)
     if text is None:
         img.save(os.path.join(SHOTS, "diagnose_%s.png" % date.today()))

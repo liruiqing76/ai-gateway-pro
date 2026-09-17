@@ -5,6 +5,7 @@
 
 import time
 from collections import deque, defaultdict
+from datetime import datetime
 
 from backend.config import settings
 
@@ -32,6 +33,44 @@ class QualityTracker:
     def __init__(self, window: int = None):
         self.window = window or settings.QUALITY_WINDOW
         self._data: dict[str, ModelQuality] = defaultdict(ModelQuality)
+        # 今日成功调用数 (key = provider||model): 加权分发按剩余免费额度平滑用。
+        # 单进程内存计数, 首次访问时从 usage_logs 聚合当日已用, 每日凌晨清零。
+        self.today_usage: dict[str, int] = {}
+        self._today_seeded = False
+
+    def seed_today_from_db(self) -> None:
+        """首次使用前把今日已记录的成功调用数从 usage_logs 聚合进内存。"""
+        try:
+            from backend.models import get_session, UsageLog
+            from sqlalchemy import func
+            session = get_session()
+            try:
+                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                rows = (session.query(UsageLog.provider_name, UsageLog.model_name, func.count())
+                        .filter(UsageLog.success.is_(True), UsageLog.created_at >= today)
+                        .group_by(UsageLog.provider_name, UsageLog.model_name)
+                        .all())
+                self.today_usage = {f"{p}||{m}": int(c) for p, m, c in rows}
+            finally:
+                session.close()
+        except Exception:
+            pass  # 聚合失败不影响路由, 平滑从 0 开始
+        self._today_seeded = True
+
+    def get_today_usage(self, key: str) -> int:
+        if not self._today_seeded:
+            self.seed_today_from_db()
+        return self.today_usage.get(key, 0)
+
+    def bump_today_usage(self, key: str) -> None:
+        if not self._today_seeded:
+            self.seed_today_from_db()
+        self.today_usage[key] = self.today_usage.get(key, 0) + 1
+
+    def reset_today_usage(self) -> None:
+        """每日额度重置时清零(与 quality_tracker.reset_all 同周期)"""
+        self.today_usage.clear()
+        self._today_seeded = True
 
     def _get(self, key: str) -> ModelQuality:
         q = self._data.get(key)
@@ -45,6 +84,7 @@ class QualityTracker:
         q = self._get(key)
         if status == "ok":
             q.ok += 1
+            self.bump_today_usage(key)
         elif status == "fail":
             q.fail += 1
         else:
@@ -109,6 +149,7 @@ class QualityTracker:
     def reset_all(self) -> None:
         """清空所有记录(测试用)"""
         self._data.clear()
+        self.reset_today_usage()
 
 
 # ============================================================

@@ -42,6 +42,7 @@ COMPILE_REL = [
     "backend/core/router_group.py", "backend/core/scheduler.py",
     "backend/core/zen_sources.py", "backend/core/free_sources.py",
     "backend/core/vision.py", "backend/core/trace.py",
+    "backend/core/dead_model_recovery.py",
     "backend/auth/security.py", "backend/auth/middleware.py",
     "backend/billing/plans.py",
     # config.py/main.py 不编译: Analysis 通过它们发现 pydantic_settings 等传递依赖
@@ -149,7 +150,8 @@ def verify_imports() -> bool:
         "backend.core.chat_log", "backend.core.router_group",
         "backend.core.scheduler", "backend.core.zen_sources",
         "backend.core.free_sources", "backend.core.vision",
-        "backend.core.trace", "backend.auth.security",
+        "backend.core.trace", "backend.core.dead_model_recovery",
+        "backend.auth.security",
         "backend.auth.middleware", "backend.billing.plans",
         # backend.config / backend.main 未编译, 由 Analysis + datas 交付
         "scheduler",

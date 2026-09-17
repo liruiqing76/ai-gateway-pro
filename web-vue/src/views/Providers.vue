@@ -59,6 +59,13 @@
             {{ fetching ? $t('providers.fetchingModels') : $t('providers.fetchModelList') }}
           </el-button>
         </el-form-item>
+        <el-form-item :label="$t('providers.trafficShaping')">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="form.max_concurrency" type="number" min="1" :placeholder="$t('providers.maxConcurrencyPlaceholder')" />
+            <el-input v-model="form.min_interval_ms" type="number" min="0" :placeholder="$t('providers.minIntervalPlaceholder')" />
+          </div>
+          <div style="font-size:12px;color:var(--gw-text-tertiary);line-height:1.6">{{ $t('providers.trafficShapingHint') }}</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
@@ -131,7 +138,7 @@ async function loadProviders() {
 function openAdd() {
   editing.value = false
   editId.value = null
-  form.value = { name: '', base_url: '', api_key: '', models_str: '' }
+  form.value = { name: '', base_url: '', api_key: '', models_str: '', max_concurrency: '', min_interval_ms: '' }
   dialogVisible.value = true
 }
 
@@ -177,6 +184,8 @@ function edit(row) {
     base_url: row.base_url,
     api_key: '',
     models_str: (row.models || []).join(', '),
+    max_concurrency: row.max_concurrency ?? '',
+    min_interval_ms: row.min_interval_ms ?? '',
   }
   dialogVisible.value = true
 }
@@ -211,6 +220,11 @@ async function save() {
       api_key: form.value.api_key,
       models: form.value.models_str.split(',').map(s => s.trim()).filter(Boolean),
     }
+    // 空字符串 = 用全局默认; 合法数值才提交
+    const mc = form.value.max_concurrency
+    const mi = form.value.min_interval_ms
+    if (mc !== '' && mc !== null && mc !== undefined && Number(mc) > 0) body.max_concurrency = Number(mc)
+    if (mi !== '' && mi !== null && mi !== undefined && Number(mi) >= 0) body.min_interval_ms = Number(mi)
     if (editing.value) {
       await api.put(`/api/providers/${editId.value}`, body)
     } else {

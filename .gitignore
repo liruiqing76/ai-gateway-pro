@@ -63,3 +63,12 @@ backend/data/*.bak*
 /dist_build/
 /agnes_cat_frame.jpg
 desktop/checkin/detect_cache.json
+
+# 本地诊断/临时脚本与构建/覆盖率产物(不入库)
+/temp/
+/logs/
+/coverage_html/
+/runtime_tmp/
+/build_log_*.txt
+/_delete_probe.txt
+/.research_zen_models.json

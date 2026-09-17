@@ -117,6 +117,7 @@
               <el-table-column label="操作" width="100">
                 <template #default="{row}">
                   <el-button size="small" type="primary" link @click="openUrl(row.url)">打开</el-button>
+                  <el-button size="small" type="danger" link @click="ignorePost(row.hash_key)" title="标记为无关内容">忽略</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -330,6 +331,23 @@ function openUrl(url) {
     window.open(safe, '_blank', 'noopener,noreferrer')
   } else {
     ElMessage.warning('链接无效或缺少 http(s) 协议，无法打开')
+  }
+}
+
+async function ignorePost(hash) {
+  if (!hash || hash.length !== 32) {
+    ElMessage.error('无效的帖子标识');
+    return;
+  }
+  try {
+    await api.post(`/api/free-model-search/post/${hash}/ignore`);
+    ElMessage.success('已标记为无关内容');
+    // 刷新当前报告以移除已忽略的帖子
+    if (reportDetail.value) {
+      await viewReport(reportDetail.value.report.run_date);
+    }
+  } catch (e) {
+    ElMessage.error('操作失败: ' + (e.response?.data?.message || e.message));
   }
 }
 

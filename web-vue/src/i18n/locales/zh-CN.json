@@ -369,7 +369,11 @@
     "deleteFailed": "删除失败: ",
     "footerSummary": "共 {count} 个渠道 · {models} 个模型 · 点击右上角添加新渠道",
     "refreshModels": "刷新模型",
-    "refreshFailed": "刷新失败"
+    "refreshFailed": "刷新失败",
+    "trafficShaping": "流量整形（可选，留空用默认）",
+    "maxConcurrencyPlaceholder": "并发上限(如2)",
+    "minIntervalPlaceholder": "模型间隔ms(如600)",
+    "trafficShapingHint": "并发上限: 该渠道同时最大请求数(免费档默认2, 其他4); 模型间隔: 同一模型两次调用的最小间隔, 防触发上游限流"
   },
   "requests": {
     "pageTitle": "请求记录",

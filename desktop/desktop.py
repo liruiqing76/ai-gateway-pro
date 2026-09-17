@@ -20,6 +20,7 @@ import socket
 import threading
 import subprocess
 import time
+import ctypes
 from pathlib import Path
 from datetime import date
 
@@ -113,11 +114,11 @@ class CheckinAPI:
             # 打包后 python 解释器不可用，签到脚本直接内嵌运行
             if getattr(sys, "frozen", False):
                 import runpy
+                import io
                 old_cwd = os.getcwd()
                 os.chdir(str(script.parent))
                 try:
                     # 重定向 stdout/stderr 捕获脚本输出
-                    import io
                     old_stdout, old_stderr = sys.stdout, sys.stderr
                     buf = io.StringIO()
                     sys.stdout = buf
@@ -130,8 +131,19 @@ class CheckinAPI:
                     output = buf.getvalue().strip()
                     if output:
                         return output[-500:]
-                except Exception:
+                except SystemExit as e:
+                    # 脚本 sys.exit() 抛 SystemExit(BaseException), 普通 except 接不住,
+                    # 逃逸会让 JS 桥 promise 永不 resolve——前端表现为"点了没返回"。
+                    # 必须兜住并把退出原因作为结果返回。
                     os.chdir(old_cwd) if old_cwd != os.getcwd() else None
+                    output = buf.getvalue().strip()
+                    tail = "签到脚本退出: %s" % (e.code if e.code is not None else "无消息")
+                    return (output + "\n" + tail)[-500:] if output else tail
+                except BaseException as e:
+                    os.chdir(old_cwd) if old_cwd != os.getcwd() else None
+                    output = buf.getvalue().strip()
+                    tail = "签到异常: %r" % (e,)
+                    return (output + "\n" + tail)[-500:] if output else tail
                 # 若 stdout 无输出，从签到日志文件读取最近几行
                 log_file = get_state_dir() / "checkin.log"
                 if log_file.exists():
@@ -399,7 +411,60 @@ def _make_closing_handler(window):
     return on_closing
 
 
+def _check_ocr_components() -> None:
+    """打包态自检签到 OCR 原生组件。
+
+    火绒等安全软件常把解包目录里的大体积未签名二进制
+    (onnxruntime_pybind11_state.pyd / onnxruntime.dll) 当"释放型木马"隔离,
+    导致签到脚本 import onnxruntime 失败 → 签到永远无返回。此处启动时核对:
+    缺失则清理解包缓存(下次启动全量重解包)并弹窗告知用户加信任区。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    mp = Path(getattr(sys, "_MEIPASS", ""))
+    if not mp.is_dir():
+        return
+    missing = [rel for rel in (
+        "onnxruntime/capi/onnxruntime_pybind11_state.pyd",
+        "onnxruntime/capi/onnxruntime.dll",
+    ) if not (mp / rel).exists()]
+    if not missing:
+        return
+    print("[desktop] OCR 组件缺失:", missing)
+    try:
+        import shutil
+        shutil.rmtree(mp, ignore_errors=True)
+        print("[desktop] 已清理解包缓存，重启后将全量重新解包")
+    except Exception as e:
+        print("[desktop] 清理解包缓存失败(忽略):", e)
+    try:
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            "签到 OCR 组件缺失：\n" + "\n".join(missing) + "\n\n"
+            "通常是安全软件(如火绒)隔离了程序解包出的 OCR 引擎组件，"
+            "签到功能会一直无返回。\n\n"
+            "已清理解包缓存，请完全退出本程序后重新启动一次使其重新解包；\n"
+            "并把 智能网关.exe 加入火绒/其他安全软件信任区，避免再次被删。",
+            "智能网关 - OCR 组件缺失", 0x10)
+    except Exception as e:
+        print("[desktop] 提示弹窗失败(忽略):", e)
+
+
 def main():
+    # 单实例锁: 重复启动(双击/开机自启撞车)会让两个实例争抢 8765 端口、
+    # 02:00 两个签到脚本同时抢鼠标互踩。后到者提示后直接退出。
+    _mutex = ctypes.windll.kernel32.CreateMutexW(None, False,
+                                                 "AI-Gateway-Pro-SingleInstance")
+    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.user32.MessageBoxW(
+            0, "智能网关已在运行，请不要重复启动。\n"
+               "(重复实例会导致定时签到互相干扰。)",
+            "智能网关", 0x30)
+        return
+
+    # 打包态自检 OCR 组件(被杀软隔离时给出明确指引, 而不是签到静默失败)
+    _check_ocr_components()
+
     # 启动后端
     t = threading.Thread(target=start_backend, daemon=True)
     t.start()

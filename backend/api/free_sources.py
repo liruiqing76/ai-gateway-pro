@@ -68,3 +68,33 @@ async def zen_health(user: User = Depends(get_current_user_from_jwt)):
     except Exception as e:
         logger.exception("opencode 健康检测失败")
         return {"ok": False, "error": str(e)}
+
+
+# ---- b.ai 免费模型(自动发现 + 健康检测, 同 opencode zen 模式) ----
+@router.get("/bai")
+async def bai_status(user: User = Depends(get_current_user_from_jwt)):
+    """b.ai 免费模型同步/健康检测的最新状态。"""
+    from backend.core.bai_sources import runtime_state
+    return runtime_state()
+
+
+@router.post("/bai/sync")
+async def bai_sync(user: User = Depends(get_current_user_from_jwt)):
+    """立即同步: 拉取 b.ai 模型目录 → 真实探测 → 更新 biai 渠道。"""
+    from backend.core.bai_sources import sync_bai_free_models
+    try:
+        return sync_bai_free_models()
+    except Exception as e:
+        logger.exception("b.ai 免费模型同步失败")
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/bai/health")
+async def bai_health(user: User = Depends(get_current_user_from_jwt)):
+    """立即健康检测: 重探 biai 渠道模型, 连续失败模型自动移出。"""
+    from backend.core.bai_sources import health_check_bai_models
+    try:
+        return health_check_bai_models()
+    except Exception as e:
+        logger.exception("b.ai 健康检测失败")
+        return {"ok": False, "error": str(e)}

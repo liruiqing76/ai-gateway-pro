@@ -88,13 +88,18 @@ def classify_model(model: str) -> str:
     return "other"
 
 
-def build_router_groups(providers) -> dict:
+def build_router_groups(providers, user_id: int | None = None) -> dict:
     """
     从渠道列表构建路由组。
     providers: 每个 has .name, .models (JSON string list), .disabled_models (JSON string list)
+    user_id: 传了则按死模型拉黑登记过滤(自动分类/渠道重建不再带回过期模型)
     返回: {组名: [带渠道前缀的模型ID, ...]}
     例: NVIDIA-z-ai/glm-5.2
     """
+    banned = set()
+    if user_id is not None:
+        from backend.core.dead_models import banned_keys
+        banned = banned_keys(user_id)
     groups = {name: [] for name in DEFAULT_ROUTER_GROUPS}
     for p in providers:
         models = p.models or []
@@ -107,6 +112,8 @@ def build_router_groups(providers) -> dict:
             disabled = json.loads(disabled)
         for m in models:
             if m in disabled:
+                continue
+            if banned and f"{p.name}||{m}" in banned:
                 continue
             cls = classify_model(m)
             prefixed = f"{p.name}-{m}"

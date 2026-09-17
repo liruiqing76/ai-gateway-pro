@@ -8,6 +8,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -19,6 +20,47 @@ logger = logging.getLogger("gateway.experience")
 INJECT_TAG = "[历史经验/教训]"  # 用于识别已注入, 避免重复
 INJECT_LIMIT = 6   # 最多注入条数
 INJECT_CHARS = 2500  # 注入内容最大字符
+
+
+_TRIVIAL_STOP_RE = re.compile(
+    r"^\s*(hi+|hello|你好|哈喽|嗨|在吗|测试|test|用.{0,8}回复|回复一下|试试)\s*[!。？?,.，、\s]*$",
+    re.IGNORECASE)
+
+
+def _is_trivial_chat(c) -> bool:
+    """判断一条聊天是否是无可提炼价值的琐碎对话(问候/探针/极短请求)。"""
+    from backend.core import chat_archive
+    try:
+        probe = chat_archive.tail_of(c.prompt_text or "", 2000).strip()
+    except Exception:
+        probe = ""
+    if not probe:
+        return True
+    if len(probe) < 15:   # 问候/纯探针/极短请求, 提炼不出可复用经验
+        return True
+    if _TRIVIAL_STOP_RE.search(probe):
+        return True
+    return False
+
+
+# 产出经验里的"空泛模型行为噪音"特征词: 命中的特征词越多, 越像从测试探针对话
+# (hi / 用两个字回复 之类)提炼出的通用废话(模型响应不稳定/需重复测试/一致性),
+# 缺乏具体场景、因果与可复用的落点, 无可参考价值, 直接丢弃。
+_GENERIC_INFLATION_PHRASES = (
+    "响应差异", "响应不稳定", "稳定性", "一致性", "重复测试", "重复请求",
+    "非确定性", "碎片化", "重新校准", "采样参数", "无响应", "训练数据",
+    "语义微调", "问候", "确认词", "同义词", "多轮测试", "输出差异",
+    "指令遵循", "行为特征", "会话启动", "建立连接", "微调策略", "鲁棒性",
+    "空白回复", "正常返回", "基准验证", "基线验证", "版本差异", "随机性",
+)
+
+
+def _is_garbage_experience(title: str, content: str) -> bool:
+    """过滤"空泛模型行为"类经验: 命中两条及以上泛化噪音词即判定无价值。"""
+    text = f"{title or ''} {content or ''}"
+    hits = sum(1 for p in _GENERIC_INFLATION_PHRASES if p in text)
+    return hits >= 2
+
 
 
 # ─────────────────────────────────────────────
@@ -123,16 +165,26 @@ async def _distill_one_chunk(user_id: int, chats) -> int:
     from backend.core import chat_archive
     transcript = []
     for c in chats:
-        # 输入只取尾部采样: agent/完整上下文场景下, 前几百字符全是固定
-        # system 提示词(每条记录都一样), 提炼出来全是"模型基线验证"类
+        # 输入/输出都取尾部采样: agent/完整上下文场景下, 开头全是固定
+        # system 提示词/应答模板(每条都一样), 提炼出来全是"模型基线验证"类
         # 通用废话。真实交互在消息末尾, 预览列的尾段正好是它。
-        transcript.append(f"### 请求(模型 {c.original_model or '?'})\n"
-                          f"输入: {chat_archive.tail_of(c.prompt_text or '', 2000)}\n"
-                          f"输出: {(c.completion_text or '')[:2000]}")
+        if _is_trivial_chat(c):
+            continue  # 琐碎探针/问候/极短请求, 提炼不出可复用经验, 直接跳过
+        transcript.append(
+            f"### 请求(模型 {c.original_model or '?'})\n"
+            f"输入: {chat_archive.tail_of(c.prompt_text or '', 2000)}\n"
+            f"输出: {chat_archive.tail_of(c.completion_text or '', 2000)}")
+    if not transcript:
+        return 0  # 该 chunk 全为琐碎对话, 不必调用 LLM
     prompt = (
-        "你是经验提炼助手。请从下面若干次 AI 对话中提炼出可复用的经验(lesson)/事实(fact)/标准流程(sop)。\n"
-        "每条经验输出格式为严格的 JSON 数组，每个元素含 kind(lesson|fact|sop)、title(简短标题)、content(2-4句可复用经验)。\n"
-        "只输出 JSON，不要其它文字。\n\n"
+        "你是经验提炼助手。从下面的真实 AI 对话记录中提炼可复用的经验(lesson)/事实(fact)/标准流程(sop)。\n"
+        "要求:\n"
+        "1. 只提炼有信息量的内容: 每条必须说清「什么场景/遇到什么问题/如何解决或结论是什么」,\n"
+        "   空泛的\"用户在使用模型\"\"模型正常返回\"这类对话直接跳过, 不要为凑数硬造经验。\n"
+        "2. kind 只能取: lesson=踩坑/失败换来的教训, fact=验证过的事实或配置知识, sop=可复用的操作步骤。\n"
+        "3. title 一句话点明主题, content 写 2-4 句可直接复用的具体经验(含关键参数/命令/因果)。\n"
+        "4. 若整段没有可提炼的价值, 输出空数组 []。\n"
+        "输出为严格 JSON 数组, 每个元素含 kind、title、content; 只输出 JSON, 不要其它文字。\n\n"
         "对话记录:\n" + "\n\n".join(transcript)
     )
     text = await _call_llm([{"role": "user", "content": prompt}], max_tokens=1500)
@@ -160,6 +212,8 @@ def _save_parsed(user_id: int, text: str, source_chat_ids=None):
             content = (str(it.get("content", "") or "")).strip()
             if not title or not content:
                 continue
+            if _is_garbage_experience(title, content):
+                continue  # 空泛的模型行为废话, 无可复用价值
             # 去重: 同用户同标题
             dup = session.query(ExperienceLog).filter_by(
                 user_id=user_id, title=title).first()
@@ -290,11 +344,15 @@ async def _llm_daily_summary(day: str, chats) -> str:
         transcript.append(
             f"- [{status}] {c.original_model}: "
             f"输入『{chat_archive.tail_of(c.prompt_text or '', 500)[:300]}』"
-            f" → 输出『{(c.completion_text or '')[:300]}』")
+            f" → 输出『{chat_archive.tail_of(c.completion_text or '', 300)}』")
     prompt = (
-        f"请总结 {day} 这一天的 AI 对话经验与教训。\n"
-        f"要求输出包含: 1) 今日概览 2) 成功经验 3) 失败教训 4) 明日建议。\n"
-        f"用简洁中文 200-400 字。\n\n今日记录:\n" + "\n".join(transcript)
+        f"你是运营复盘助手。请基于下面 {day} 这一天的 AI 调用记录, 写一份有实际价值的复盘总结。\n"
+        f"要求:\n"
+        f"1) 今日概览: 一句话概括当天调用规律(模型/任务类型) 2) 成功经验: 指出具体做对了什么\n"
+        f"3) 失败教训: 点出具体失败类型与可改进点(有失败就分析原因, 没有就写\"今日无失败\")\n"
+        f"4) 明日建议: 给出 1-3 条可执行建议。\n"
+        f"禁止空话套话(\"继续努力\"\"保持良好\"之类), 每条要有记录依据。200-400 字。\n\n"
+        f"今日记录:\n" + "\n".join(transcript)
     )
     return await _call_llm([{"role": "user", "content": prompt}], max_tokens=800)
 

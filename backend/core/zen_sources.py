@@ -28,6 +28,10 @@ ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 ZEN_CHAT_URL = ZEN_BASE_URL + "/chat/completions"
 ZEN_MODELS_URL = ZEN_BASE_URL + "/models"
 
+# opencode 官方免费模型白名单: 模型 id 不带 -free 后缀(如 big-pickle),
+# 但匿名探测返回 429 FreeUsageLimitError —— 同属免费档, 只是当日额度用尽。
+ZEN_OFFICIAL_FREE_EXTRA = ("big-pickle",)
+
 _lock = threading.Lock()
 _runtime = {
     "last_sync_at": None,
@@ -39,10 +43,13 @@ _runtime = {
 
 # ---------- 数据源 ----------
 def fetch_zen_free_models(timeout: float = 25.0) -> list:
-    """拉取 zen 上游 /v1/models 目录, 只收官方免费档(模型 id 尾部 -free)。
+    """拉取 zen 上游 /v1/models 目录, 收匿名免费通道可用的模型。
 
-    上游目录本身就是"免费 vs 付费"的权威来源, 不需要 models.dev 第三方
-    快照; 只探测 -free 结尾的模型, 其它一律不碰。失败返回空列表。
+    两类模型都会进入候选:
+      - 模型 id 尾部 -free (官方免费档);
+      - ZEN_OFFICIAL_FREE_EXTRA 白名单: opencode 官方模型 id 不带 -free,
+        但匿名探测返回 429 FreeUsageLimitError, 属免费档(如 big-pickle)。
+    付费模型(匿名探测 401 Missing API key)一律不收。失败返回空列表。
     """
     try:
         r = httpx.get(ZEN_MODELS_URL, timeout=timeout,
@@ -55,8 +62,23 @@ def fetch_zen_free_models(timeout: float = 25.0) -> list:
     items = data.get("data") if isinstance(data, dict) else data
     if not isinstance(items, list):
         return []
-    return sorted({it.get("id", "").strip() for it in items
-                   if isinstance(it, dict) and it.get("id", "").strip().endswith("-free")})
+    return sorted({
+        it.get("id", "").strip() for it in items
+        if isinstance(it, dict)
+        and it.get("id", "").strip()
+        and (it.get("id", "").strip().endswith("-free")
+             or it.get("id", "").strip() in ZEN_OFFICIAL_FREE_EXTRA)
+    })
+
+
+def _is_free_quota(why: str) -> bool:
+    """探测原因是否为 429 免费额度限制(模型本身可用, 当日额度用尽)。
+
+    probe 失败原因为 "{status_code} {body}", 429 FreeUsageLimitError
+    表示匿名免费通道接受该模型, 只是限流 —— 与 401 付费档/403 地区/
+    400 下架不同, 不应计入失败。
+    """
+    return why.startswith("429")
 
 
 # ---------- 探测 ----------
@@ -133,8 +155,10 @@ def sync_zen_free_models(probe_timeout: float = 25.0) -> dict:
         if not models:
             return {"ok": False, "error": "未能获取 opencode 免费模型列表"}
         results = probe_many(models, timeout=probe_timeout)
-        usable = [m for m, (ok, _) in results.items() if ok]
-        unusable = {m: why for m, (ok, why) in results.items() if not ok}
+        # 200 或 429(免费额度当日用尽) 都视为可用: 429 模型保留在渠道,
+        # 额度恢复后立即可用; 请求期靠 circuit 熔断退避兜底。
+        usable = [m for m, (ok, why) in results.items() if ok or _is_free_quota(why)]
+        unusable = {m: why for m, (ok, why) in results.items() if not ok and not _is_free_quota(why)}
 
         if not usable:
             # 全灭保护: 疑似上游/网络整体故障, 保留现有渠道不覆盖, 避免模型全被清空
@@ -199,7 +223,8 @@ def health_check_zen_models() -> dict:
                 dead = []
                 for m in models:
                     ok, why = results[m]
-                    if ok:
+                    if ok or _is_free_quota(why):
+                        # 可用或 429 当日额度用尽(免费可用) → 保留
                         _runtime["fail_count"][m] = 0
                         alive.append(m)
                     else:

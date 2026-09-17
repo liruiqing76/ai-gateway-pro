@@ -41,9 +41,6 @@
             <el-menu-item index="requests">
               <el-icon><List /></el-icon><span>{{ $t('app.nav.requests') }}</span>
             </el-menu-item>
-            <el-menu-item index="experience">
-              <el-icon><MagicStick /></el-icon><span>{{ $t('app.nav.experience') }}</span>
-            </el-menu-item>
             <el-menu-item index="free-model-search">
               <el-icon><Search /></el-icon><span>免费模型搜索</span>
             </el-menu-item>
@@ -96,7 +93,6 @@
             <Routers v-if="activePage === 'routers'" />
             <Aliases v-if="activePage === 'aliases'" />
             <Requests v-if="activePage === 'requests'" />
-            <Experience v-if="activePage === 'experience'" />
             <FreeModelSearch v-if="activePage === 'free-model-search'" />
             <Settings v-if="activePage === 'settings'" />
           </div>
@@ -123,7 +119,6 @@ import Checkin from './views/Checkin.vue'
 import Routers from './views/Routers.vue'
 import Aliases from './views/Aliases.vue'
 import Requests from './views/Requests.vue'
-import Experience from './views/Experience.vue'
 import Settings from './views/Settings.vue'
 import FreeModelSearch from './views/FreeModelSearch.vue'
 
