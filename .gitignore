@@ -12,6 +12,8 @@ venv/
 # Node / 前端
 web-vue/node_modules/
 web-vue/dist/
+# 前端构建验证临时产物
+web-vue/.verify-out/
 
 # 构建产物 (PyInstaller)
 build/
