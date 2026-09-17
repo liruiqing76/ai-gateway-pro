@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-exe:
+    name: 构建 Windows exe 并发布
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装后端依赖 + PyInstaller
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: 构建前端 (web/)
+        working-directory: web-vue
+        run: |
+          npm install
+          npm run build
+
+      - name: 打包 exe (PyInstaller)
+        run: pyinstaller ai_gateway_pro.spec --noconfirm
+
+      - name: 上传产物到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/智能网关.exe
+            dist/智能网关/*
