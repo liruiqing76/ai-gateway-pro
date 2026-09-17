@@ -1,5 +1,11 @@
 # 智能网关 · AI Gateway Pro
 
+[![CI](https://github.com/liruiqing76/ai-gateway-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/liruiqing76/ai-gateway-pro/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+
 > 一个 OpenAI 兼容端点，聚合所有模型的免费额度。
 > One OpenAI-compatible endpoint, aggregating free quotas from every model provider.
 
