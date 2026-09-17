@@ -12,6 +12,7 @@
 > - README 中文：本文档
 > - README English: [README.en.md](README.en.md)
 > - 详细文档手册: [docs/](docs/00-概览.md)
+- 已知问题与规划: [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
 
 `AI Gateway Pro` 把 NVIDIA、魔搭 ModelScope、SenseNova、AMD Token Factory、OpenRouter、OpenCode Zen、Agnes 等上游平台的**免费额度**统一收编，对外暴露**一个** OpenAI 兼容接口（`/v1`）。客户端只需填一个简单的模型名，剩下的一切——模型选择、路由决策、熔断降级、故障转移、额度控制——全部交给网关。
 
