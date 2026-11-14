@@ -65,20 +65,28 @@
     <!-- 路由配置弹窗 -->
     <el-dialog v-model="showDialog" :title="$t('routers.routerConfig')" width="720px" top="5vh" destroy-on-close @open="loadData">
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <el-input v-model="newName" :placeholder="$t('routers.routeNamePlaceholder')" clearable style="flex:1;min-width:200px" />
+        <el-input v-model="newName" :placeholder="$t('routers.routeNamePlaceholder')" clearable style="flex:1;min-width:180px" @keyup.enter="addGroup" />
+        <el-select v-model="newStrategy" style="width:130px">
+          <el-option :label="$t('routers.strategyQuality')" value="quality" />
+          <el-option :label="$t('routers.strategyFastest')" value="fastest" />
+          <el-option :label="$t('routers.strategyStable')" value="stable" />
+          <el-option :label="$t('routers.strategyFailover')" value="failover" />
+        </el-select>
         <el-button @click="autoClassify" :disabled="allOptions.length === 0">{{ $t('routers.autoClassify') }}</el-button>
-        <el-button @click="addGroup" :disabled="!newName.trim()">{{ $t('routers.addGroup') }}</el-button>
+        <el-button type="primary" @click="addGroup">{{ $t('routers.addGroup') }}</el-button>
       </div>
 
       <div v-if="loadingData" v-loading="loadingData" style="min-height:200px" />
       <div v-else-if="Object.keys(routersData).length === 0" style="text-align:center;padding:40px;color:var(--gw-text-tertiary)">{{ $t('routers.emptyAddHint') }}</div>
 
       <div v-else style="max-height:480px;overflow-y:auto">
+        <!-- 组列表: 默认只渲染一行(组名/策略/成员数), 点"选模型"才铺开模型勾选。
+             以前每个组都直接铺全部模型, 十几个组 × 几百个模型会把页面拖死 -->
         <div v-for="(entry, name) in routersData" :key="name" class="router-group">
           <div class="router-group-header">
             <div>
               <span class="name">🔀 {{ name }}</span>
-              <span class="hint">{{ $t('routers.clientModelHint') }}</span>
+              <span class="hint">{{ $t('routers.modelsSelected', { n: selectedMap[name]?.size || 0 }) }} · {{ $t('routers.clientModelHint') }}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <el-select v-model="routerStrategies[name]" size="small" style="width:120px" @change="onStrategyChange(name)">
@@ -87,17 +95,27 @@
                 <el-option :label="$t('routers.strategyStable')" value="stable" />
                 <el-option :label="$t('routers.strategyFailover')" value="failover" />
               </el-select>
+              <el-button size="small" @click="toggleExpand(name)">
+                {{ expanded[name] ? $t('routers.collapseModels') : $t('routers.pickModels') }}
+              </el-button>
               <el-button size="small" text type="danger" @click="removeGroup(name)">{{ $t('common.delete') }}</el-button>
             </div>
           </div>
-          <div v-for="opt in allOptions" :key="opt.key" class="model-option">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
-              <el-checkbox :model-value="selectedMap[name]?.has(opt.key) || false" @change="toggleModel(name, opt.key, $event)" />
-              <span :class="'status-dot ' + (opt.available === true ? 'ok' : opt.available === false ? 'fail' : 'unknown')"></span>
-              <el-tag size="small" type="info">{{ opt.provider }}</el-tag>
-              <span>{{ opt.model }}</span>
-              <span v-if="opt.latency_ms" style="font-size:11px;color:var(--gw-text-tertiary);margin-left:auto">{{ opt.latency_ms }}ms</span>
-            </label>
+          <div v-if="expanded[name]" style="padding:6px 0 10px 24px">
+            <el-input v-model="modelFilter[name]" size="small" :placeholder="$t('routers.searchModel')" clearable
+                      style="max-width:300px;margin-bottom:8px" />
+            <div style="max-height:300px;overflow-y:auto">
+              <div v-for="opt in filterOptions(name)" :key="opt.key" class="model-option">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+                  <el-checkbox :model-value="selectedMap[name]?.has(opt.key) || false" @change="toggleModel(name, opt.key, $event)" />
+                  <span :class="'status-dot ' + (opt.available === true ? 'ok' : opt.available === false ? 'fail' : 'unknown')"></span>
+                  <el-tag size="small" type="info">{{ opt.provider }}</el-tag>
+                  <span>{{ opt.model }}</span>
+                  <span v-if="opt.latency_ms" style="font-size:11px;color:var(--gw-text-tertiary);margin-left:auto">{{ opt.latency_ms }}ms</span>
+                </label>
+              </div>
+              <div v-if="filterOptions(name).length === 0" style="padding:12px 0;color:var(--gw-text-tertiary);font-size:12px">{{ $t('routers.noMatchedModel') }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -122,8 +140,13 @@
           </el-select>
           <span style="font-size:12px;color:var(--gw-text-tertiary)">{{ $t('routers.selectedCount', { selected: editSelected.size, total: editOptions.length }) }}</span>
         </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <el-input v-model="editFilter" size="small" class="edit-model-search" :placeholder="$t('routers.searchModel')" clearable style="flex:1;min-width:200px" />
+          <el-button size="small" @click="selectFiltered">{{ $t('routers.selectFiltered') }}</el-button>
+          <el-button size="small" @click="clearAllEdit">{{ $t('routers.clearAll') }}</el-button>
+        </div>
         <div v-if="editOptions.length === 0" style="text-align:center;padding:30px;color:var(--gw-text-tertiary)">{{ $t('routers.noAvailableModels') }}</div>
-        <div v-for="opt in editOptions" :key="opt.key" class="model-option">
+        <div v-for="opt in editFiltered" :key="opt.key" class="model-option">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
             <el-checkbox :model-value="editSelected.has(opt.key)" @change="toggleEdit(opt.key, $event)" />
             <el-tag size="small" type="info">{{ opt.provider }}</el-tag>
@@ -140,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
@@ -162,6 +185,10 @@ const routersData = reactive({})
 const routerStrategies = reactive({})
 const selectedMap = reactive({})
 const newName = ref('')
+const newStrategy = ref('quality')
+// 每组默认收起, 点"选模型"才铺开模型列表(避免十几个组 × 几百个模型把页面拖死)
+const expanded = reactive({})
+const modelFilter = reactive({})
 
 // 单个路由组编辑
 const showEdit = ref(false)
@@ -171,6 +198,24 @@ const editName = ref('')
 const editStrategy = ref('quality')
 const editOptions = ref([])
 const editSelected = ref(new Set())
+const editFilter = ref('')
+const editFiltered = computed(() => {
+  const q = editFilter.value.trim().toLowerCase()
+  if (!q) return editOptions.value
+  return editOptions.value.filter(o =>
+    o.model.toLowerCase().includes(q) || o.provider.toLowerCase().includes(q))
+})
+
+/** 把当前筛选结果全部勾上(几百个模型里逐个人肉点太费劲) */
+function selectFiltered() {
+  const s = new Set(editSelected.value)
+  editFiltered.value.forEach(o => s.add(o.key))
+  editSelected.value = s
+}
+
+function clearAllEdit() {
+  editSelected.value = new Set()
+}
 
 function openEdit(row) {
   editName.value = row.name
@@ -180,6 +225,7 @@ function openEdit(row) {
 
 async function loadEditOptions() {
   editLoading.value = true
+  editFilter.value = ''
   try {
     const [r, r2] = await Promise.all([api.get('/api/providers'), api.get('/api/routers')])
     const list = r.data || []
@@ -287,6 +333,8 @@ async function loadData() {
     Object.keys(routersData).forEach(k => delete routersData[k])
     Object.keys(selectedMap).forEach(k => delete selectedMap[k])
     Object.keys(routerStrategies).forEach(k => delete routerStrategies[k])
+    Object.keys(expanded).forEach(k => delete expanded[k])
+    Object.keys(modelFilter).forEach(k => delete modelFilter[k])
     Object.entries(data).forEach(([name, entry]) => {
       const models = entry?.models || entry || []
       const strategy = entry?.strategy || 'quality'
@@ -301,17 +349,44 @@ async function loadData() {
   }
 }
 
+function toggleExpand(name) {
+  expanded[name] = !expanded[name]
+}
+
+/** 组内模型过滤(按模型名/渠道名搜索, 几百个模型里能快速定位) */
+function filterOptions(name) {
+  const q = (modelFilter[name] || '').trim().toLowerCase()
+  if (!q) return allOptions.value
+  return allOptions.value.filter(o =>
+    o.model.toLowerCase().includes(q) || o.provider.toLowerCase().includes(q))
+}
+
 function addGroup() {
   const name = newName.value.trim()
-  if (!name) return
+  if (!name) {
+    // 以前按钮是 disabled 且无任何提示, 用户只会觉得"点不动"
+    ElMessage.warning(t('routers.nameRequired'))
+    return
+  }
   if (routersData[name]) {
     ElMessage.warning(t('routers.routeNameExists'))
     return
   }
+  // 新组插到最前面并滚到顶: 组多时新组原来落在列表末尾, 用户以为没加上
+  const old = Object.fromEntries(Object.entries(routersData))
+  Object.keys(routersData).forEach(k => delete routersData[k])
   routersData[name] = []
-  routerStrategies[name] = 'quality'
+  Object.assign(routersData, old)
+  routerStrategies[name] = newStrategy.value || 'quality'
   selectedMap[name] = new Set()
+  expanded[name] = true          // 新建后直接展开, 马上就能勾模型
+  modelFilter[name] = ''
   newName.value = ''
+  ElMessage.success(t('routers.groupAddedTip', { name }))
+  nextTick(() => {
+    const el = document.querySelector('.el-dialog .router-group')
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 function removeGroup(name) {

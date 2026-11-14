@@ -19,7 +19,7 @@
     "routeNamePlaceholder": "Route name (e.g. large / small model)",
     "autoClassify": "📊 Auto Classify",
     "addGroup": "+ Add",
-    "emptyAddHint": "No router groups yet. Enter a name above and click \"\"Add\"\"",
+    "emptyAddHint": "No router groups yet. Enter a name above and click Add",
     "clientModelHint": "(Use this name as the client-side model)",
     "strategyQuality": "Quality First",
     "strategyFastest": "Fastest First",
@@ -41,6 +41,15 @@
     "promptTitle": "Notice",
     "autoClassifyDone": "Auto classification done. You can adjust the selection manually",
     "deleted": "Deleted",
-    "deleteFailed": "Delete failed: "
+    "deleteFailed": "Delete failed: ",
+    "nameRequired": "Enter a router group name above first",
+    "groupAddedTip": "Added '{name}'. Its model list is now expanded — tick models, then save",
+    "modelsSelected": "{n} models selected",
+    "pickModels": "Pick models",
+    "collapseModels": "Collapse",
+    "searchModel": "Search model / channel",
+    "noMatchedModel": "No matching model",
+    "selectFiltered": "Select all filtered",
+    "clearAll": "Clear all"
   }
 }

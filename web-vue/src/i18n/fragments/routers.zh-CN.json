@@ -19,7 +19,7 @@
     "routeNamePlaceholder": "路由名称 (如 大模型 / 小模型)",
     "autoClassify": "📊 自动分类",
     "addGroup": "+ 添加",
-    "emptyAddHint": "暂无路由组，请在上方输入名称后点击\"\"添加",
+    "emptyAddHint": "暂无路由组，请在上方输入名称后点「添加」",
     "clientModelHint": "(客户端 model 填此名称)",
     "strategyQuality": "质量优先",
     "strategyFastest": "最快优先",
@@ -41,6 +41,15 @@
     "promptTitle": "提示",
     "autoClassifyDone": "自动分类完成，可手动调整勾选",
     "deleted": "已删除",
-    "deleteFailed": "删除失败: "
+    "deleteFailed": "删除失败: ",
+    "nameRequired": "请先在上方输入路由组名称",
+    "groupAddedTip": "已添加「{name}」，正在展开模型列表，勾选后点保存",
+    "modelsSelected": "已选 {n} 个模型",
+    "pickModels": "选模型",
+    "collapseModels": "收起",
+    "searchModel": "搜索模型 / 渠道",
+    "noMatchedModel": "没有匹配的模型",
+    "selectFiltered": "全选筛选结果",
+    "clearAll": "清空"
   }
 }
