@@ -132,6 +132,15 @@ class TestRouterValidation:
         assert r.status_code == 400
         assert "strategy" in r.json()["detail"]
 
+    def test_failover_strategy_accepted(self, client):
+        """failover 是渠道自动生成组的策略, 手动编辑保存必须接受(否则编辑渠道组必 400)"""
+        r = client.post("/api/routers", json={"name": "buddy", "models": ["buddy-auto"], "strategy": "failover"})
+        assert r.status_code == 200
+        assert r.json()["strategy"] == "failover"
+        # 回读保持
+        r2 = client.get("/api/routers")
+        assert r2.json()["data"]["buddy"]["strategy"] == "failover"
+
     def test_delete_missing_404(self, client):
         r = client.delete("/api/routers/nonexistent")
         assert r.status_code == 404

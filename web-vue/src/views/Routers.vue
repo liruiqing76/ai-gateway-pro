@@ -85,6 +85,7 @@
                 <el-option :label="$t('routers.strategyQuality')" value="quality" />
                 <el-option :label="$t('routers.strategyFastest')" value="fastest" />
                 <el-option :label="$t('routers.strategyStable')" value="stable" />
+                <el-option :label="$t('routers.strategyFailover')" value="failover" />
               </el-select>
               <el-button size="small" text type="danger" @click="removeGroup(name)">{{ $t('common.delete') }}</el-button>
             </div>
@@ -117,6 +118,7 @@
             <el-option :label="$t('routers.strategyQuality')" value="quality" />
             <el-option :label="$t('routers.strategyFastest')" value="fastest" />
             <el-option :label="$t('routers.strategyStable')" value="stable" />
+            <el-option :label="$t('routers.strategyFailover')" value="failover" />
           </el-select>
           <span style="font-size:12px;color:var(--gw-text-tertiary)">{{ $t('routers.selectedCount', { selected: editSelected.size, total: editOptions.length }) }}</span>
         </div>
@@ -145,7 +147,7 @@ import api from '../api'
 
 const { t } = useI18n()
 
-const STRATEGY_LABELS = { quality: t('routers.strategyQuality'), fastest: t('routers.strategyFastest'), stable: t('routers.strategyStable') }
+const STRATEGY_LABELS = { quality: t('routers.strategyQuality'), fastest: t('routers.strategyFastest'), stable: t('routers.strategyStable'), failover: t('routers.strategyFailover') }
 
 const groups = ref([])
 const loading = ref(false)

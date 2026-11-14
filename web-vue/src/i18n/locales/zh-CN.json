@@ -545,6 +545,7 @@
     "strategyQuality": "质量优先",
     "strategyFastest": "最快优先",
     "strategyStable": "最稳优先",
+    "strategyFailover": "故障转移",
     "saveAll": "保存所有路由",
     "editGroupTitle": "✏️ 编辑路由组：{name}",
     "selectedCount": "已选 {selected} / {total}",

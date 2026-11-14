@@ -42,6 +42,28 @@ def test_failover_picks_multiple_for_router_group():
     assert len(candidates) >= 2  # 两个匹配
 
 
+def test_failover_strategy_keeps_declaration_order(monkeypatch):
+    """failover 策略: 严格按渠道模型声明顺序, 不被质量分/轮询打散(对比: quality 会按分数重排)。"""
+    from backend.models import Provider
+    from backend.core import proxy, scheduler
+
+    providers = [
+        Provider(id=1, name="MockA", models=["z-model", "a-model", "m-model"], disabled_models="[]", enabled=True),
+    ]
+    routers = {"chan": ["z-model", "a-model", "m-model"]}
+
+    # 关掉加权轮询(否则 quality 分支顺序不确定), 给 a-model 极高分数:
+    # quality 会把它排到最前, failover 应保持声明顺序
+    monkeypatch.setattr(proxy.settings, "ROUND_ROBIN_ENABLED", False)
+    monkeypatch.setattr(scheduler.quality_tracker, "get_score", lambda k: 9.0 if "a-model" in k else 0.0)
+
+    q = [m for _p, m in pick_available_models(providers, "chan", routers, force=True, strategy="quality")]
+    f = [m for _p, m in pick_available_models(providers, "chan", routers, force=True, strategy="failover")]
+
+    assert q == ["a-model", "z-model", "m-model"]   # quality: 分高的优先
+    assert f == ["z-model", "a-model", "m-model"]   # failover: 声明顺序
+
+
 @pytest.mark.asyncio
 async def test_failover_stage_forward():
     """

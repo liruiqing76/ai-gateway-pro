@@ -24,6 +24,7 @@
     "strategyQuality": "Quality First",
     "strategyFastest": "Fastest First",
     "strategyStable": "Most Stable",
+    "strategyFailover": "Failover",
     "saveAll": "Save All Routes",
     "editGroupTitle": "✏️ Edit Router Group: {name}",
     "selectedCount": "Selected {selected} / {total}",

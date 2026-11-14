@@ -41,8 +41,11 @@ async def save_router(request: Request, user: User = Depends(get_current_user_fr
         raise HTTPException(400, "路由名称必填")
     if not isinstance(models, list):
         raise HTTPException(400, "models 必须是数组")
-    if strategy not in ("quality", "fastest", "stable"):
-        raise HTTPException(400, "strategy 必须是 quality/fastest/stable 之一")
+    # failover 是渠道自动生成的路由组策略(按成员声明顺序逐个试, 见 _sort_by_strategy);
+    # quality/fastest/stable 是手动组的三种排序策略。四种都接受。
+    _ALLOWED = ("quality", "fastest", "stable", "failover")
+    if strategy not in _ALLOWED:
+        raise HTTPException(400, "strategy 必须是 quality/fastest/stable/failover 之一")
 
     session = get_session()
     try:

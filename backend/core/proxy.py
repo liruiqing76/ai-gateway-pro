@@ -1500,11 +1500,16 @@ def _sort_by_strategy(
     elif strategy == "stable":
         # 成功率最高优先, 同分按延迟, 再按声明顺序(组序/渠道序)
         scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4], x[6]))
+    elif strategy == "failover":
+        # 故障转移: 严格按成员在路由组里的声明顺序(idx), 熔断的沉底当兜底。
+        # 不用质量分/延迟重排 —— 渠道专属组(buddy/qoder/trae 等)期望的就是
+        # "按我列的顺序逐个试"。也不参与下面的轮询/加权抽样(会打乱顺序)。
+        scored.sort(key=lambda x: (1 if x[5] else 0, x[6]))
     else:  # quality (默认)
         # 质量分最高优先, 同分按延迟, 再按声明顺序(组序/渠道序)
         scored.sort(key=lambda x: (1 if x[5] else 0, -x[3], x[4], x[6]))
 
-    if settings.ROUND_ROBIN_ENABLED and rr_key:
+    if strategy != "failover" and settings.ROUND_ROBIN_ENABLED and rr_key:
         if settings.SPREAD_WEIGHTED_ENABLED:
             # 加权随机分发: 每请求按 质量×今日用量平滑×渠道冷却 抽样, 失败后
             # 按剩余权重继续 —— 流量摊开而非恒定砸向最高分候选, 防单一上游

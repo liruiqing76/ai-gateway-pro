@@ -717,7 +717,7 @@ async def check_all_models(
             for r in routers:
                 group_name = r.name
                 strategy = r.strategy or "quality"
-                strategy_label = {"quality": "质量优先", "fastest": "最快优先", "stable": "最稳优先"}.get(strategy, strategy)
+                strategy_label = {"quality": "质量优先", "fastest": "最快优先", "stable": "最稳优先", "failover": "故障转移"}.get(strategy, strategy)
 
                 headers = {
                     "Authorization": f"Bearer {gateway_api_key}",
