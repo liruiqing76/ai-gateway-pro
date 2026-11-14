@@ -357,6 +357,11 @@ def verify_link_live(url: str, session: httpx.Client = None,
     """
     if not url or not url.startswith(("http://", "https://")):
         return False
+    # 搜狗 /link 中转链接对非浏览器请求会触发验证码/反爬墙(实测 GET 一次后
+    # 同一 token 再次请求即返回验证页), 无法可靠验证; 该链接来自搜狗结果页、
+    # 且帖子已在 7 天时效窗口内, 浏览器可正常打开, 直接放行。
+    if "weixin.sogou.com" in url:
+        return True
     headers = {
         "User-Agent": UA_MOBILE,  # 公众号对移动 UA 更宽松, 验证页更少
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -493,27 +498,6 @@ def _to_permanent_wechat_url(resolved: str, session: httpx.Client,
     except Exception as e:
         logger.warning(f"解析公众号永久直链失败: {resolved[:60]}... {e}")
         return None
-
-
-def _is_transitional_mp_url(url: str) -> bool:
-    """判断 url 是否是带时效 token 的公众号中转密文链接。
-
-    形如 mp.weixin.qq.com/s?src=11&timestamp=...&signature=...(path=/s 且带 query),
-    token 几小时后即过期, 用户点开会"链接已失效"。永久直链是 /s/<hash> 或带
-    __biz&mid&sn 的地址, 不在此列。
-    """
-    if not url:
-        return False
-    try:
-        u = urlsplit(url)
-    except Exception:
-        return False
-    if "mp.weixin.qq.com" not in (u.hostname or ""):
-        return False
-    path = (u.path or "").rstrip("/")
-    if path == "/s" and u.query:
-        return True
-    return False
 
 
 def _hash_key(source: str, url: str, title: str = "") -> str:
@@ -670,60 +654,85 @@ def search_baidu(keyword: str, session: httpx.Client, limit: int = 20) -> List[D
     return results
 
 
+# 头条 SSR 页面字段提取(条目为 JS 对象字面量, 非严格 JSON, 用字段级正则)
+# title 可能是明文 "title":"..." 或嵌套对象 "title":{"text":"..."}; 高亮为 \u003cem\u003e
+_TT_TITLE_RE = re.compile(r'"title":\s*(?:"((?:[^"\\]|\\.)*)"|\{"text":"((?:[^"\\]|\\.)*)")')
+_TT_TIME_RE = re.compile(r'"(?:display_time|publish_time)":\s*"?(\d{9,13})')
+_TT_DATETIME_RE = re.compile(r'"datetime":\s*"([0-9]{4}-[0-9]{2}-[0-9]{2}[^"]*)"')
+_TT_SOURCE_RE = re.compile(r'"source":\s*"((?:[^"\\]|\\.)*)"')
+_TT_ABSTRACT_RE = re.compile(r'"abstract":\s*"((?:[^"\\]|\\.)*)"')
+
+
 def search_toutiao(keyword: str, session: httpx.Client, limit: int = 20) -> List[Dict]:
-    """今日头条搜索"""
+    """今日头条搜索 — 抓移动端 SSR 页面, 从内嵌 JSON 提取结果。
+
+    PC 端(so.toutiao.com/search?dvpf=pc)返回的是 SPA 空壳, 无任何结果数据;
+    mobile 端(dvpf=mobile + 移动 UA)返回 SSR 页面, 结果以内嵌 JSON 形式
+    写在页面里(每条含 article_url/title/source/display_time/abstract)。
+    条目字段顺序不固定, 采用"article_url 锚点 + 前后大窗口"提取:
+    相邻条目的 article_url 间隔约 20KB, 前后 15KB 窗口不会跨条目。
+    个别关键词 SSR 不内嵌数据(返回 0 条)或个别条目无发表时间(入库时丢弃),
+    属正常波动。
+    """
     results = []
     try:
         url = "https://so.toutiao.com/search"
         params = {
             "keyword": keyword,
             "pd": "information",
-            "dvpf": "pc",
+            "dvpf": "mobile",
             "source": "input",
         }
-        resp = session.get(url, params=params, headers={"Referer": "https://so.toutiao.com/"})
-        if resp.status_code == 200:
-            # 尝试 JSON 响应
+        resp = session.get(url, params=params,
+                           headers={"User-Agent": UA_MOBILE, "Referer": "https://so.toutiao.com/"})
+        if resp.status_code != 200:
+            return results
+        html = resp.text
+        for m in re.finditer(r'"article_url":\s*"(https?://[^"]+)"', html):
+            if len(results) >= limit:
+                break
+            i = m.start()
+            win = html[max(0, i - 12000):i + 3000]
+            tm = list(_TT_TITLE_RE.finditer(win))
+            if not tm:
+                continue
+            title = tm[-1].group(1) or tm[-1].group(2)
             try:
-                data = resp.json()
-                for item in data.get("data", [])[:limit]:
-                    if isinstance(item, dict):
-                        results.append({
-                            "source": "toutiao",
-                            "url": item.get("url", ""),
-                            "title": item.get("title", ""),
-                            "author": item.get("source", ""),
-                            "published_at": item.get("publish_time"),
-                            "content_snippet": item.get("abstract", ""),
-                        })
-            except json.JSONDecodeError:
-                # HTML 解析（今日头条为 SSR/JS 渲染, 无有效结果时返回空）
-                html = resp.text
-                blocks = re.findall(r'<div class="[^"]*result[^"]*"[^>]*>.*?</div>', html, re.DOTALL)
-                for block in blocks[:limit]:
-                    title_match = re.search(r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, re.DOTALL)
-                    if title_match:
-                        link = title_match.group(1)
-                        title = re.sub(r"<[^>]+>", "", title_match.group(2)).strip()
-                        # 必须有实质性标题和合法链接才收录
-                        if title and len(title) > 3 and "toutiao.com" in link:
-                            snippet_match = re.search(r'<div class="[^"]*abstract[^"]*"[^>]*>(.*?)</div>', block, re.DOTALL)
-                            snippet = re.sub(r"<[^>]+>", "", snippet_match.group(1)).strip() if snippet_match else ""
-                            results.append({
-                                "source": "toutiao",
-                                "url": link,
-                                "title": title,
-                                "author": None,
-                                "published_at": None,
-                                "content_snippet": snippet,
-                            })
+                title = json.loads(f'"{title}"')
+            except Exception:
+                title = title.replace("\\u003c", "<").replace("\\u003e", ">").replace("\\/", "/")
+            title = re.sub(r"<[^>]+>", "", title).strip()
+            if len(title) < 4:
+                continue
+            tts = _TT_TIME_RE.findall(win)
+            dtm = _TT_DATETIME_RE.findall(win)
+            srcs = _TT_SOURCE_RE.findall(win)
+            abss = _TT_ABSTRACT_RE.findall(win)
+            url_clean = m.group(1).split("&")[0]  # 去掉 upstream_biz/utm 等跟踪参数
+            results.append({
+                "source": "toutiao",
+                "url": url_clean,
+                "title": title,
+                "author": srcs[-1] if srcs else None,
+                "published_at": int(tts[-1]) if tts else (dtm[-1] if dtm else None),
+                # 秒级时间戳或 "YYYY-MM-DD HH:MM:SS" 字符串, _coerce_published_at 均可解析
+                "content_snippet": abss[-1] if abss else "",
+            })
     except Exception as e:
         logger.warning(f"今日头条搜索失败: {e}")
     return results
 
 
 def search_wechat(keyword: str, session: httpx.Client, limit: int = 20) -> List[Dict]:
-    """微信公众号搜索 - 通过搜狗微信"""
+    """微信公众号搜索 - 通过搜狗微信。
+
+    微信对搜狗签发的中转签名链接(mp.weixin.qq.com/s?src=&timestamp&signature)
+    直接 GET 会命中 weui-msg 反爬墙页(无正文、无 msg_link/og:url/canonical),
+    无法升级成永久直链(实测多种 Referer/UA/Cookie 组合均被拦)。
+    搜狗结果页每条结果的 /link?url= 中转链接对真实浏览器可用(搜狗白名单 +
+    签名在有效期), 帖子本身 7 天时效窗口内有效, 因此直接采用该中转链接入库。
+    入库/回填时不再对搜狗链接逐条 GET(会触发搜狗验证码), 见 verify_link_live。
+    """
     results = []
     try:
         url = "https://weixin.sogou.com/weixin"
@@ -766,27 +775,9 @@ def search_wechat(keyword: str, session: httpx.Client, limit: int = 20) -> List[
                 title = title.replace("<!--red_beg-->", "").replace("<!--red_end-->", "")
                 snippet = snippet.replace("<!--red_beg-->", "").replace("<!--red_end-->", "")
                 if title:
-                    resolved = _resolve_search_url(link, session)
-                    if not resolved:
-                        logger.warning(f"搜狗微信结果无法解析出直链, 丢弃: {title[:30]}...")
-                        continue
-                    # 公众号文章直链必须是 mp.weixin.qq.com, 其它落点视为中转/反爬
-                    # 死链, 丢弃(否则用户点开即"链接已失效")
-                    if (urlsplit(resolved).hostname or "") != "mp.weixin.qq.com":
-                        logger.warning(f"搜狗微信结果非 mp 直链, 丢弃: {title[:30]}...")
-                        continue
-                    # 升级为可长期访问的文章永久直链(中转 src=11&signature URL 会过期)
-                    perma = _to_permanent_wechat_url(resolved, session)
-                    if perma:
-                        resolved = perma
-                    elif _is_transitional_mp_url(resolved):
-                        # 拿不到永久直链、且仍是会过期的中转密文链接 → 丢弃。
-                        # 留着的话 token 过期后用户点开就是"链接已失效", 宁可少一条。
-                        logger.warning(f"搜狗微信中转密文链接无法解析永久直链, 丢弃: {title[:30]}...")
-                        continue
                     results.append({
                         "source": "wechat",
-                        "url": resolved,
+                        "url": link,  # 搜狗中转链接(浏览器可打开), 不再升级 mp 永久直链
                         "title": title,
                         "author": author,
                         "published_at": published_at,
@@ -969,11 +960,13 @@ MAX_LINK_REFRESH = 300
 
 
 def _refresh_dead_links(session, limit: int = MAX_LINK_REFRESH) -> Tuple[int, int, int]:
-    """回填存量死链: 把已入库的中转链接(weixin.sogou.com / baidu.com/link)
+    """回填存量死链: 把已入库的中转链接(baidu.com/link / mp 过渡密文链接)
     重新解析为直链并更新 url + hash_key。
 
     早期版本把搜索结果页的中转链接直接入库, token 过期后用户点开即"链接已失效"。
     解析不出的行(反爬/真死链/落地重复)直接删除——留着只会继续坑用户点开失效。
+    注: weixin.sogou.com 中转链接不在清理范围 —— 微信对搜狗签发链接 GET 即反爬,
+    无法升级; 且这类帖子 7 天时效窗口内有效, 过期后自然从报告消失。
     返回 (成功更新数, 失败数, 删除数)。
     """
     from sqlalchemy import or_
@@ -981,7 +974,6 @@ def _refresh_dead_links(session, limit: int = MAX_LINK_REFRESH) -> Tuple[int, in
 
     posts = session.query(FreeModelPost).filter(
         or_(
-            FreeModelPost.url.like("%weixin.sogou.com%"),
             FreeModelPost.url.like("%baidu.com/link%"),
             FreeModelPost.url.like("%mp.weixin.qq.com/s?%"),  # 带 src=&signature 的中转密文链接
         )

@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # ---- 速率限制 ----
     RATE_LIMIT_PER_MINUTE: int = 100
 
+    # ---- 上游出站网络 ----
+    # 网关访问所有上游(渠道/免费池)的代理策略:
+    #   ""(默认)  跟随系统/环境变量代理(httpx trust_env 原生行为)
+    #   "none"    强制直连, 忽略系统代理 —— 系统代理半死导致上游 EOF/000 时用
+    #   "http://127.0.0.1:7892" 等  显式指定代理
+    # 实测(2026-10-24): 本机 Clash(127.0.0.1:7892)半挂时, 默认走它会连所有
+    # 上游都 EOF; 直连矩阵证明 kilo/opencode/github/trae/qoder/cline 均可直连。
+    UPSTREAM_PROXY: str = ""
+
     # ---- 路由调度 ----
     CIRCUIT_FAIL_THRESHOLD: int = 3
     CIRCUIT_RECOVERY_SECONDS: int = 60
@@ -82,6 +91,19 @@ class Settings(BaseSettings):
     CHECKIN_RETRY: int = 3
     CHECKIN_TIMEOUT: int = 30
 
+    # ---- 白嫖渠道每日签到(HTTP 接口版, 参考 dsh-our-free-model auto-checkin) ----
+    # 每天定点对所有已连接且支持签到接口的渠道(如 CodeArts)自动领取每日积分;
+    # UTC+8 自然日防重, 状态落盘 data/channel_checkin_state.json
+    CHANNEL_CHECKIN_ENABLED: bool = True
+    # 每日执行时间(HH:MM, 本地时区)
+    CHANNEL_CHECKIN_TIME: str = "09:30"
+    # 启动后延迟多少秒先补跑一轮(服务当天晚启动也能领上当日积分)
+    CHANNEL_CHECKIN_START_DELAY: int = 120
+    # 凭据提前刷新量(分钟): access_token 剩余寿命低于该值即自动 refresh,
+    # 让 token 永不过期(登录一次后由后台保活, 不再需要手动重登)。
+    # 旧版仅剩 60s 才刷, 短寿命 token(trae/cline)常在两轮保活间过期。
+    CRED_REFRESH_AHEAD_MINUTES: int = 120
+
     # ---- 免费源自动同步 (对齐 CX-AIRouter 的"每6小时扫描全网免费源") ----
     # 定时把外部免费源清单(JSON)拉取下来, 与本地 provider_templates.json 合并,
     # 新增的免费服务商自动进入"添加渠道"模板池。
@@ -94,8 +116,25 @@ class Settings(BaseSettings):
     # 并持续重探保活: 连续失败 ZEN_PROBE_FAIL_LIMIT 次的模型自动移出渠道。
     ZEN_AUTO_SYNC: bool = True
     ZEN_SYNC_HOURS: int = 6
-    ZEN_HEALTH_CHECK_MINUTES: int = 60
+    # ⚠️ 默认 0 = 关闭定时体检。原因: 车道是"公共匿名池"(无账号, 按出口/会话计免费额度),
+    # 而体检 = 对渠道里每个模型发一次**真实 chat 请求**, 9 个模型 × 每小时 = 每天
+    # 200+ 次真调用, 会把本该留给你的免费额度提前烧光(2026-10-24 实测踩到)。
+    # 死模型改由真实流量判定: 请求 400 连续 3 次即长冷却并移出路由组。
+    # 需要主动体检时设成正数(分钟), 或到「免费渠道」页点「立即同步」。
+    ZEN_HEALTH_CHECK_MINUTES: int = 0
     ZEN_PROBE_FAIL_LIMIT: int = 2
+
+    # ---- Kilo 公共网关免费池(免认证): opencode zen 匿名车道被上游
+    # FreeTierError 关闭后(2026-10-24 实测, 插件本机同样全灭)的免费池替代 ----
+    KILO_AUTO_SYNC: bool = True
+    KILO_SYNC_HOURS: int = 6
+
+    # ---- 后台测速: 跳过"额度是公共池"的免密车道路由组 ----
+    # 测速是对每个路由组发一次真实请求, 而组内 failover 会一路试到有货为止:
+    # opencode 组 9 个模型全 429 时 = 一次测速就发 9 个真请求, 每 2h 一轮,
+    # 一天 100+ 次, 把公共免费额度提前烧光(2026-10-24 实测踩到)。
+    # 逗号分隔的路由组名; 置空则不跳过任何组。
+    SPEED_CHECK_SKIP_GROUPS: str = "opencode,kilo"
 
     # ---- b.ai 免费模型: 自动发现 + 健康检测(同 opencode zen 模式) ----
     # 定时拉 {B_AI_BASE_URL}/models 目录, 真实探测免费可用性后写进"biai"渠道,

@@ -16,7 +16,8 @@ from backend.auth.security import (
     check_login_lock, record_login_failure, reset_login_failures,
 )
 from backend.auth.middleware import (
-    get_current_user_from_jwt, ensure_quota_window, persist_quota_window,
+    get_current_user_from_jwt, get_current_user_any,
+    ensure_quota_window, persist_quota_window,
 )
 from backend.models import get_session, User
 from backend.config import settings
@@ -204,6 +205,36 @@ async def me(user: User = Depends(get_current_user_from_jwt)):
         **user.to_dict(),
         "api_key_masked": mask_secret(user.api_key),
     }
+
+
+# ============================================================
+# 免登录模式(单机自用)开关
+# ============================================================
+class LocalModeIn(BaseModel):
+    auth_disabled: bool
+
+
+@router.get("/local-mode")
+async def get_local_mode():
+    """查询免登录模式状态(无需凭证: 前端启动探测用, 不含敏感信息)"""
+    from backend.auth import local_mode
+    return {"auth_disabled": local_mode.auth_disabled()}
+
+
+@router.post("/local-mode")
+async def set_local_mode(
+    data: LocalModeIn,
+    user: User = Depends(get_current_user_any),
+):
+    """切换免登录模式。
+
+    鉴权开启时须登录才能打开; 开启后关闭无需凭证(get_current_user_any
+    在免登录态注入默认用户)—— 否则关掉登录后自己就被锁在门外了。
+    仅建议本机 127.0.0.1 部署时开启, 暴露到局域网/公网必须关闭。
+    """
+    from backend.auth import local_mode
+    local_mode.set_auth_disabled(data.auth_disabled)
+    return {"auth_disabled": data.auth_disabled}
 
 
 # ============================================================

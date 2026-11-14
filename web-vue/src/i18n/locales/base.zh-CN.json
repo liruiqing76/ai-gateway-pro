@@ -16,7 +16,8 @@
       "chats": "聊天记录",
       "requests": "请求记录",
       "experience": "经验积累",
-      "settings": "设置"
+      "settings": "设置",
+      "channels": "免费渠道"
     }
   },
   "common": {
@@ -40,7 +41,8 @@
     "unknownError": "未知错误",
     "operationFailed": "操作失败",
     "warning": "警告",
-    "savedOk": "已保存"
+    "savedOk": "已保存",
+    "copyFailed": "复制失败"
   },
   "login": {
     "subtitle": "聚合免费额度 · 一个 API 调所有模型",
@@ -66,6 +68,12 @@
     "generalCard": "通用设置",
     "language": "界面语言",
     "languageDesc": "切换界面显示语言，仅影响当前设备",
+    "languageDesc": "切换界面显示语言，仅影响当前设备",
+    "localMode": "免登录模式",
+    "localModeDesc": "单机自用推荐开启: 打开后打开管理面板不再需要登录, /v1 调用也不再校验 API Key。设置立即生效, 无需重启",
+    "localModeWarn": "仅限网关只监听本机(127.0.0.1)时开启; 若暴露到局域网/公网, 任何设备都能直接使用你的网关",
+    "localModeOn": "免登录模式已开启, 刷新页面即免登录进入面板",
+    "localModeOff": "免登录模式已关闭, 下次访问需重新登录",
     "autoStartCard": "桌面客户端",
     "autoStart": "开机自启动",
     "autoStartDesc": "登录 Windows 后自动启动智能网关，保证定时签到不缺席",

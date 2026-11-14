@@ -6,6 +6,8 @@
 import asyncio
 import logging
 
+import httpx
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
@@ -13,6 +15,7 @@ from backend.auth.middleware import get_current_user_from_jwt
 from backend.auth.security import encrypt_secret, decrypt_secret, mask_secret
 from backend.core.proxy import get_context_length
 from backend.core import zen_sources, free_sources
+from backend.core.channel_auth import is_channel_provider
 from backend.models import get_session, User, Provider, ProviderTemplate, Router, ModelSpeedLog
 
 logger = logging.getLogger("gateway.providers")
@@ -527,6 +530,28 @@ async def refresh_provider_models(
                         "routers_updated": [],
                         "msg": "探测全部失败(疑似网络/上游故障), 保留现有模型不变, 请稍后再试"}
             models = sorted(set(p.models or []))  # sync 已把渠道更新为实测可用集
+        elif is_channel_provider(p.name):
+            # 渠道 Provider(WorkBuddy/buddy/LobsterAI/Trae/CodeArts 等):
+            # 走渠道专属目录接口, 比通用 /v1/models 透传多拿上游计费倍率
+            # (workbuddy credits / lobsterai costMultiplier)并自动入库
+            # model_rates。拉取失败时保留现有模型不清空(与 zen 全灭保护同思路)。
+            from backend.core.channel_import import fetch_channel_models, sync_model_rates
+            try:
+                package = decrypt_secret(p.api_key_encrypted)
+            except Exception:
+                package = ""
+            async with httpx.AsyncClient() as client:
+                entries = await fetch_channel_models(client, p.name, package)
+            if not entries:
+                return {"ok": True, "models_count": len(p.models or []),
+                        "routers_updated": [],
+                        "msg": "上游模型目录拉取失败, 保留现有模型不变, 请稍后再试"}
+            sync_model_rates(user.id, p.name, entries)
+            models = [e["id"] if isinstance(e, dict) else str(e) for e in entries]
+            from backend.core.dead_models import banned_keys
+            banned = banned_keys(user.id)
+            models = [m for m in models if f"{p.name}||{m}" not in banned]
+            p.models = models
         else:
             try:
                 api_key = decrypt_secret(p.api_key_encrypted)
@@ -786,6 +811,19 @@ async def _run_speed_check_for_all_users():
             logger.warning(f"测速失败 user={uid}: {e}")
 
 
+def _speed_check_skip_groups() -> set:
+    """后台测速要跳过的路由组(默认 opencode/kilo 等公共额度车道)。
+
+    `SPEED_CHECK_SKIP_GROUPS` 逗号分隔; 置空 = 不跳过任何组。
+    """
+    try:
+        from backend.config import settings
+        raw = getattr(settings, "SPEED_CHECK_SKIP_GROUPS", "") or ""
+    except Exception:
+        raw = ""
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
 async def _do_speed_check(user_id: int):
     """对单个用户按路由组测速(通过网关聚合端点), 写入 DB"""
     import httpx, time, json as _json
@@ -808,8 +846,14 @@ async def _do_speed_check(user_id: int):
             return
 
         async with httpx.AsyncClient(timeout=60) as client:
+            skipped = set()
             for r in routers:
                 group_name = r.name
+                if group_name in _speed_check_skip_groups():
+                    # 免密车道的额度是公共池, 测速会经 failover 把整组模型都试一遍,
+                    # 白白烧掉本该留给用户的免费额度 → 不测(见 config 注释)
+                    skipped.add(group_name)
+                    continue
                 headers = {
                     "Authorization": f"Bearer {gateway_api_key}",
                     "Content-Type": "application/json",
@@ -859,7 +903,8 @@ async def _do_speed_check(user_id: int):
                 )
                 session.add(log)
         session.commit()
-        logger.info(f"路由组测速完成 user={user_id}")
+        logger.info(f"路由组测速完成 user={user_id}" +
+                    (f" (跳过公共额度组: {', '.join(sorted(skipped))})" if skipped else ""))
     except Exception as e:
         session.rollback()
         logger.error(f"路由组测速异常 user={user_id}: {e}")

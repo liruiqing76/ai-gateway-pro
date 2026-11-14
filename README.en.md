@@ -177,4 +177,4 @@ The repository contains both an **open-source core** and optional **commercial a
 
 ## 🙏 Thanks
 
-Built on the open-source ecosystem: FastAPI · SQLAlchemy 2 · httpx · Vue 3 · Element Plus · APScheduler · pywebview · RapidOCR
+Built on the open-source ecosystem: FastAPI · SQLAlchemy 2 · httpx · Vue 3 · Element Plus · APScheduler · pywebview

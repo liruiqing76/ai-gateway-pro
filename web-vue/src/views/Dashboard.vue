@@ -205,6 +205,7 @@ const icoWaveW = icoWrap(icoWave, 'var(--gw-muted)')
 const stats = ref({
   total: 0, today: 0, totalTokens: 0, todayTokens: 0,
   todayChars: 0, totalChars: 0, failed: 0, models: 0, providers: 0, groups: 0,
+  todayCost: 0,
 })
 
 // ── 可靠性排行(真实调用口径, 排除 speed_test 探测) ──
@@ -339,6 +340,7 @@ const chips = computed(() => [
   { key: 'today', label: t('dashboard.chipCallsToday'), value: fmt(stats.value.today), color: 'var(--gw-primary)' },
   { key: 'total', label: t('dashboard.chipCallsTotal'), value: fmt(stats.value.total), color: '#8B5CF6' },
   { key: 'failed', label: t('dashboard.chipFailed'), value: fmt(stats.value.failed), color: '#EF4444' },
+  { key: 'cost', label: t('dashboard.chipCost'), value: trimNum(stats.value.todayCost), color: '#EC4899' },
   { key: 'models', label: t('dashboard.chipModels'), value: fmt(stats.value.models), color: '#22C55E' },
   { key: 'groups', label: t('dashboard.chipGroups'), value: fmt(stats.value.groups), color: '#F59E0B' },
 ])
@@ -373,6 +375,7 @@ onMounted(async () => {
       stats.value.todayChars = d.today_chars || 0
       stats.value.totalChars = d.total_chars || 0
       stats.value.failed = d.failed || 0
+      stats.value.todayCost = d.today_cost || 0
     })(),
     (async () => {
       // 可用模型 = 全部启用渠道的模型并集(去重); 渠道数 = 启用渠道数

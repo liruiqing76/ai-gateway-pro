@@ -23,6 +23,17 @@
           </el-radio-group>
           <div class="setting-desc">{{ $t('settings.languageDesc') }}</div>
         </el-form-item>
+        <el-form-item :label="$t('settings.localMode')">
+          <el-switch
+            v-model="authDisabled"
+            :loading="authSwitching"
+            @change="toggleLocalMode"
+          />
+          <div class="setting-desc">{{ $t('settings.localModeDesc') }}</div>
+          <div class="setting-desc" style="color:var(--el-color-warning)">
+            ⚠️ {{ $t('settings.localModeWarn') }}
+          </div>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -67,6 +78,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { setLocale } from '../i18n'
+import api from '../api'
 
 const { t, locale } = useI18n()
 
@@ -74,6 +86,31 @@ const isDesktop = ref(typeof window.pywebview !== 'undefined')
 const info = ref({ version: '', executable: '', auto_start_supported: false, auto_start_enabled: false })
 const autoStart = ref(false)
 const switching = ref(false)
+
+// 免登录模式(单机自用): 关闭后网关全部接口免凭证, 面板打开即用
+const authDisabled = ref(false)
+const authSwitching = ref(false)
+
+async function refreshLocalMode() {
+  try {
+    const resp = await api.get('/api/auth/local-mode')
+    authDisabled.value = !!resp.data?.auth_disabled
+  } catch { /* 后端不可达时保持默认关 */ }
+}
+
+async function toggleLocalMode(disabled) {
+  authSwitching.value = true
+  try {
+    const resp = await api.post('/api/auth/local-mode', { auth_disabled: disabled })
+    authDisabled.value = !!resp.data?.auth_disabled
+    ElMessage.success(t(authDisabled.value ? 'settings.localModeOn' : 'settings.localModeOff'))
+  } catch (e) {
+    authDisabled.value = !disabled
+    ElMessage.error(t('common.operationFailed') + ': ' + (e?.response?.data?.detail || e))
+  } finally {
+    authSwitching.value = false
+  }
+}
 
 // 与 Checkin.vue 相同的约定: pywebview 的 JS 桥是异步注入的,
 // 页面先于桥就绪时 window.pywebview?.api?.settings 为 undefined, 必须动态获取。
@@ -135,6 +172,7 @@ function changeLocale(lang) {
 
 onMounted(() => {
   if (isDesktop.value) refreshWithRetry()
+  refreshLocalMode()
 })
 </script>
 

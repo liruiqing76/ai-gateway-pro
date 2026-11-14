@@ -61,17 +61,24 @@
 
 ### `GET /v1/models`
 
-返回当前用户可见的模型列表（路由组 + 渠道模型，均带前缀）。
+返回当前用户可见的模型列表（路由组 + 裸模型名 + 渠道模型，渠道条目带前缀）。
+计费倍率通过 `x-gw-rate` 暴露（workbuddy/buddy、lobsterai 渠道登录时从上游目录
+自动同步，其余手填；未设置的模型等效 1.0，0 = 免费）。
 
 ```json
 {
   "object": "list",
   "data": [
     {"id": "high_quality", "object": "model", "owned_by": "gateway"},
-    {"id": "NVIDIA-deepseek-v3", "object": "model", "owned_by": "NVIDIA", "context_length": 131072}
+    {"id": "kimi-k3", "object": "model", "owned_by": "gateway",
+     "x-gw-providers": ["trae", "workbuddy"], "x-gw-rate": 0.0},
+    {"id": "workbuddy-kimi-k3", "object": "model", "owned_by": "workbuddy",
+     "x-gw-rate": 2.0, "context_length": 131072}
   ]
 }
 ```
+
+裸模型名条目（同名模型跨渠道聚合）的 `x-gw-rate` 取提供它的渠道中的最低倍率。
 
 ---
 
@@ -85,6 +92,8 @@
 | POST | `/api/auth/login` | 登录，返回 JWT + API Key |
 | POST | `/api/auth/refresh` | 刷新 JWT |
 | POST | `/api/auth/rotate-key` | 重置 API Key |
+| GET | `/api/auth/local-mode` | 查询免登录模式状态（无需凭证） |
+| POST | `/api/auth/local-mode` | 切换免登录模式 `{auth_disabled: bool}`。开启后全部接口免凭证，注入默认用户（优先 admin）。仅建议本机 127.0.0.1 部署时开启；状态持久化在状态目录 `auth_state.json`，切换立即生效 |
 
 ### 渠道管理
 

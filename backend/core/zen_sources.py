@@ -51,9 +51,10 @@ def fetch_zen_free_models(timeout: float = 25.0) -> list:
         但匿名探测返回 429 FreeUsageLimitError, 属免费档(如 big-pickle)。
     付费模型(匿名探测 401 Missing API key)一律不收。失败返回空列表。
     """
+    from backend.core import upstream_http
     try:
-        r = httpx.get(ZEN_MODELS_URL, timeout=timeout,
-                      headers={"User-Agent": "ai-gateway-pro/zen-sync"})
+        with upstream_http.make_sync(timeout=timeout) as client:
+            r = client.get(ZEN_MODELS_URL, headers={"User-Agent": "ai-gateway-pro/zen-sync"})
         r.raise_for_status()
         data = r.json()
     except Exception as e:
@@ -81,21 +82,29 @@ def _is_free_quota(why: str) -> bool:
     return why.startswith("429")
 
 
+def _is_lane_closed(why: str) -> bool:
+    """403 FreeTierError/RegionError: 车道对**当前出口**关闭(身份/地区属性)。
+
+    对齐插件 probe.js 判定: 这不是对"模型"的裁决 —— 换出口/上游放开即恢复,
+    模型必须保留在渠道里(插件的 picker 同样不因 unknown 移除模型), 否则
+    每次出口抖动都会把清单清空, 恢复后还要等下一轮目录同步。
+    """
+    return (why.startswith("403")
+            and ("FreeTierError" in why or "RegionError" in why
+                 or "not available in" in why))
+
+
 # ---------- 探测 ----------
 def probe_zen_model(model_id: str, timeout: float = 25.0) -> tuple:
-    """探测单个模型: (可用, 原因)。200 即可用; 401 not supported=不在匿名白名单; 403=地区; 400=临时。"""
-    try:
-        r = httpx.post(
-            ZEN_CHAT_URL,
-            json={"model": model_id, "messages": [{"role": "user", "content": "OK"}], "max_tokens": 1},
-            timeout=timeout,
-            headers={"User-Agent": "ai-gateway-pro/zen-probe"},
-        )
-        if r.status_code == 200:
-            return True, "ok"
-        return False, f"{r.status_code} {r.text[:90]}"
-    except Exception as e:
-        return False, f"ERR {str(e)[:70]}"
+    """探测单个模型: (可用, 原因)。
+
+    v2 车道(2026-10 起): 免费模型在 /inference/v1/* 应答, 必须带官方
+    客户端指纹门(v2 UA + 会话四头 + read/shell 逐字工具定义)。旧 /zen/v1
+    chat 路径对免费 id 恒 403 FreeTierError —— 所以探测委托 opencode_free。
+    200=可用; 429=免费档当日额度(保留); 其余=不可用。
+    """
+    from backend.core.channel_auth import opencode_free
+    return opencode_free.probe_model_sync(model_id, timeout=timeout)
 
 
 def probe_many(models: list, max_workers: int = 8, timeout: float = 25.0) -> dict:
@@ -148,17 +157,57 @@ def _ensure_zen_router(session, user: User, models: list):
 
 
 # ---------- 同步(发现+探测+落地) ----------
-def sync_zen_free_models(probe_timeout: float = 25.0) -> dict:
-    """执行一次完整同步: 拉列表 → 真探测 → 给每个激活用户建/更新渠道。线程安全。"""
+def _known_usable_models() -> set:
+    """当前 opencode 渠道里已有的模型(= 已确认可用), 定时同步不再重复探测。
+
+    车道是公共匿名池, 每个模型探测都是一次**真实 chat 调用**, 会消耗本留给用户的
+    免费额度。所以定时同步只探"新出现的模型", 老模型直接沿用。
+    """
+    session = get_session()
+    try:
+        rows = session.query(Provider).filter_by(base_url=ZEN_BASE_URL).all()
+        out = set()
+        for p in rows:
+            out.update(p.models or [])
+        return out
+    finally:
+        session.close()
+
+
+def sync_zen_free_models(probe_timeout: float = 25.0, probe_known: bool = False) -> dict:
+    """执行一次完整同步: 拉列表 → 真探测(默认只探新增) → 给每个激活用户建/更新渠道。
+
+    probe_known=False(默认, 定时任务): 渠道里已有的模型视为已确认可用, 不再探测
+    ——否则每 6h × N 个模型都在白烧免费额度。probe_known=True(用户点「立即同步」
+    或调接口显式要求)才全量重探。
+    """
     with _lock:
         models = fetch_zen_free_models()
         if not models:
             return {"ok": False, "error": "未能获取 opencode 免费模型列表"}
-        results = probe_many(models, timeout=probe_timeout)
-        # 200 或 429(免费额度当日用尽) 都视为可用: 429 模型保留在渠道,
-        # 额度恢复后立即可用; 请求期靠 circuit 熔断退避兜底。
-        usable = [m for m, (ok, why) in results.items() if ok or _is_free_quota(why)]
-        unusable = {m: why for m, (ok, why) in results.items() if not ok and not _is_free_quota(why)}
+        known = set() if probe_known else _known_usable_models()
+        to_probe = [m for m in models if m not in known]
+        probed = probe_many(to_probe, timeout=probe_timeout) if to_probe else {}
+        # 判定对齐插件 probe.js: 只有"网关点名这个模型不可用"(400/404/422 或
+        # 文案 named)才把模型踢出渠道; 403 FreeTier/Region 是**出口属性**不是
+        # 模型裁决(unknown) → 保留, 换出口即恢复; 429 是当日额度 → 保留。
+        fresh = [m for m, (ok, why) in probed.items()
+                 if ok or _is_free_quota(why) or _is_lane_closed(why)]
+        usable = [m for m in models if m in known or m in fresh]
+        unusable = {m: why for m, (ok, why) in probed.items() if m not in fresh}
+        # 车道状态: 有任何 200 → open; 全 403 → closed(出口被上游关闭)
+        any_live = any(ok for ok, _ in probed.values())
+        lane_closed = bool(probed) and (not any_live) and all(
+            _is_lane_closed(why) for ok, why in probed.values() if not ok)
+        if probed:
+            lane_state = "open" if any_live else ("closed" if lane_closed else "unknown")
+        else:
+            # 本轮一个请求都没发(模型全部已知可用): 沿用上次落盘结论
+            try:
+                from backend.core import lane_state as _ls
+                lane_state = (_ls.get(ZEN_PROVIDER_NAME) or {}).get("state") or "open"
+            except Exception:
+                lane_state = "unknown"
 
         if not usable:
             # 全灭保护: 疑似上游/网络整体故障, 保留现有渠道不覆盖, 避免模型全被清空
@@ -166,6 +215,7 @@ def sync_zen_free_models(probe_timeout: float = 25.0) -> dict:
                 "ok": True,
                 "synced_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "total_free": len(models),
+                "probed": len(to_probe),
                 "usable": [],
                 "unusable": unusable,
                 "users_updated": 0,
@@ -191,12 +241,21 @@ def sync_zen_free_models(probe_timeout: float = 25.0) -> dict:
 
         # 失败计数: 同步成功的模型清零
         _runtime["fail_count"] = {m: 0 for m in usable}
+        # 车道状态落盘: 进程重启后到下一轮同步前, 界面仍能显示上次结论
+        try:
+            from backend.core import lane_state as _ls
+            _ls.save("opencode", lane_state, synced_at=time.strftime(
+                "%Y-%m-%d %H:%M:%S"), usable=len(usable))
+        except Exception:
+            pass
         result = {
             "ok": True,
             "synced_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "total_free": len(models),
+            "probed": len(to_probe),    # 本轮真实探测(消耗免费额度)的模型数
             "usable": usable,
             "unusable": unusable,
+            "lane_state": lane_state,   # open/closed/unknown(出口属性)
             "users_updated": updated_users,
         }
         _runtime["last_sync_at"] = result["synced_at"]
@@ -223,8 +282,9 @@ def health_check_zen_models() -> dict:
                 dead = []
                 for m in models:
                     ok, why = results[m]
-                    if ok or _is_free_quota(why):
-                        # 可用或 429 当日额度用尽(免费可用) → 保留
+                    if ok or _is_free_quota(why) or _is_lane_closed(why):
+                        # 可用 / 429 当日额度 / 403 车道对出口关闭(unknown,
+                        # 非模型裁决) → 保留; 对齐插件不因出口抖动移除模型
                         _runtime["fail_count"][m] = 0
                         alive.append(m)
                     else:

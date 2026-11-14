@@ -65,7 +65,8 @@ class TestUsageSummary:
         assert resp.status_code == 200
         assert resp.json() == {"total": 0, "today": 0, "today_tokens": 0,
                                "total_tokens": 0, "failed": 0,
-                               "today_chars": 0, "total_chars": 0}
+                               "today_chars": 0, "total_chars": 0,
+                               "today_cost": 0.0, "total_cost": 0.0}
 
     def test_summary_with_data(self, client):
         c, token = client

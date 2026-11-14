@@ -262,6 +262,32 @@ class ModelAlias(Base):
 
 
 # ============================================================
+# 模型倍率表 (渠道-模型 级的积分/额度消耗倍率, 默认 1.0)
+# 白嫖渠道各平台按模型扣积分的倍率多数不对外提供接口: 支持的渠道
+# (workbuddy/buddy 的 credits、lobsterai 的 costMultiplier)在登录/刷新时
+# 从上游目录自动同步; 其余由用户按实际观察填写。
+# 落库到 UsageLog.cost, 用量统计展示为"等效调用次数"。
+# ============================================================
+class ModelRate(Base):
+    __tablename__ = "model_rates"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "provider_name", "model",
+            name="uq_model_rates_user_provider_model",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider_name = Column(String(64), nullable=False)
+    model = Column(String(255), nullable=False)
+    rate = Column(Float, default=1.0, nullable=False)  # 0=免费, 1=默认
+    # auto=上游目录同步(随渠道刷新覆盖); manual=用户手填(永不被覆盖)
+    source = Column(String(16), default="manual", nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+# ============================================================
 # 请求链路日志表
 # ============================================================
 class RequestTrace(Base):
@@ -589,6 +615,9 @@ def _migrate_columns(engine):
                 "max_concurrency": "INTEGER",
                 "min_interval_ms": "INTEGER",
             },
+            "model_rates": {
+                "source": "VARCHAR(16) DEFAULT 'manual'",
+            },
         }
         for table, cols in add_cols.items():
             if table not in tables:
@@ -602,7 +631,14 @@ def _migrate_columns(engine):
                         ))
                         log.info("DB migration: %s ADD COLUMN %s", table, col)
 
-        # ── 3. 路由组同名去重 + 唯一索引 ──
+        # ── 4. qoder 模型 ID: 内部代号 → 真名(显示 ID) ──
+        # 老库里 qoder/qodercn 的模型写的是上游内部代号(qfmodel/dmodel...),
+        # 用户在路由分组界面完全看不懂。新版本对外一律真名(Qwen3.8-Flash),
+        # 签名时由 resolve_model_key 反查回代号; 这里把存量数据改写过去,
+        # 保持 provider.models / 路由组成员 / 倍率表 / 禁用表一致。
+        _migrate_qoder_display_ids(engine, tables, log)
+
+        # ── 5. 路由组同名去重 + 唯一索引 ──
         # 旧库遗留: 同名路由组多行(历史版本/并发写入), 读路径 dict 按 name 取
         # 最后一行、写路径却只改第一行 → 编辑保存到展示外的行上("剔除又勾选")。
         # 去重保留 id 最大的一行(即读路径一直生效的那行), 行为与迁移前一致。
@@ -627,6 +663,159 @@ def _migrate_columns(engine):
 
     except Exception:
         log.exception("DB column migration failed")
+
+
+_QODER_CN_TABLE = {
+    "qfmodel": "Qwen3.8-Flash", "qmodel_38max": "Qwen3.8-Max",
+    "auto": "Auto", "qmodel_latest": "Qwen3.7-Max",
+    "qmodel": "Qwen3.7-Plus", "q37fmodel": "Qwen3.7-Flash",
+    "dmodel": "DeepSeek-V4-Pro", "dfmodel": "DeepSeek-Flash",
+    "gmodel": "GLM-5.3", "gfmodel": "GLM-5.3-Flash",
+    "gm51model": "GLM-5.2", "kmodel_latest": "Kimi-K3",
+    "kmodel": "Kimi-K2.8-Preview", "mmodel": "MiniMax-M2.7",
+}
+_QODER_INTL_TABLE = {
+    "qfmodel": "Qwen3.8-Flash", "qmodel_38max": "Qwen3.8-Max",
+    "auto": "Auto", "ultimate": "Ultimate", "performance": "Performance",
+    "efficient": "Efficient", "smodel": "Sonus", "cmodel": "Cantus",
+    "qmodel_latest": "Qwen3.7-Max", "qmodel": "Qwen3.7-Plus",
+    "kmodel_latest": "Kimi-K3", "kmodel": "Kimi-K2.8-Preview",
+    "gmodel": "GLM-5.3", "gfmodel": "GLM-5.3-Flash",
+    "dmodel": "DeepSeek-V4-Pro", "dfmodel": "DeepSeek-Flash",
+    "mmodel": "MiniMax-M3",
+}
+
+
+def _qoder_display_name(provider_name, m):
+    """旧内部代号 → 真名(无映射时原样返回, 不误伤其它模型)。"""
+    table = _QODER_INTL_TABLE
+    if provider_name == "qodercn":
+        table = _QODER_CN_TABLE
+    return table.get(m, m)
+
+
+def _qoder_rename_list(provider_name, items):
+    """JSON 列值逐项代号→真名, 返回 (新列表, 是否变化)。
+
+    列可能是 JSON 字符串(裸 SQL 读出)或已解析的 list(ORM 读出), 两种都接受。
+    """
+    import json as _json
+    if isinstance(items, str):
+        try:
+            items = _json.loads(items)
+        except Exception:
+            items = []
+    if not isinstance(items, list):
+        items = list(items) if items else []
+    out, changed = [], False
+    for m in items:
+        new = _qoder_display_name(provider_name, m) if isinstance(m, str) else m
+        changed = changed or new != m
+        out.append(new)
+    return out, changed
+
+
+def _qoder_rename_router_models(models):
+    """路由组成员: 「渠道名-代号」→「渠道名-真名」(不限组名, 混合组也能改)"""
+    import json as _json
+    if isinstance(models, str):
+        try:
+            models = _json.loads(models)
+        except Exception:
+            models = []
+    if not isinstance(models, list):
+        models = list(models) if models else []
+    out, changed = [], False
+    for m in models or []:
+        if isinstance(m, str):
+            for pname in ("qodercn", "qoder"):     # 长名优先, 免得 qoder 抢先匹配
+                head = f"{pname}-"
+                if m.startswith(head):
+                    base = m[len(head):]
+                    newbase = _qoder_display_name(pname, base)
+                    if newbase != base:
+                        m, changed = f"{head}{newbase}", True
+                    break
+        out.append(m)
+    return out, changed
+
+
+def _migrate_qoder_display_ids(engine, tables, log):
+    """把 qoder/qodercn 的存量模型 ID 从内部代号改写为对外真名。
+
+    改写范围: providers.models / providers.disabled_models /
+    routers.models(任意路由组里的「qoder-代号」「qodercn-代号」) /
+    model_rates.model / dead_models.model / downed_models.model。
+    重复执行幂等(真名映射回自身)。
+
+    注意 providers/routers 的 models 是 JSON 列, 必须回写 json.dumps 后的字符串,
+    直接绑 list 会被 SQLite 拒绝(sqlite3.ProgrammingError: type 'list' not supported)。
+    """
+    if not {"providers", "routers"}.issubset(tables):
+        return
+    import json as _json
+    import sqlalchemy as sa
+    try:
+        with engine.begin() as conn:
+            for row in conn.execute(sa.text(
+                    "SELECT id, name, models, disabled_models FROM providers "
+                    "WHERE name IN ('qoder','qodercn')")).mappings():
+                nm, c1 = _qoder_rename_list(row["name"], row["models"])
+                nd, c2 = _qoder_rename_list(row["name"], row["disabled_models"])
+                if c1 or c2:
+                    conn.execute(sa.text(
+                        "UPDATE providers SET models=:m, disabled_models=:d "
+                        "WHERE id=:pid"),
+                        {"m": _json.dumps(nm, ensure_ascii=False),
+                         "d": _json.dumps(nd, ensure_ascii=False),
+                         "pid": row["id"]})
+            for row in conn.execute(sa.text(
+                    "SELECT id, models FROM routers")).mappings():
+                rm, changed = _qoder_rename_router_models(row["models"])
+                if changed:
+                    conn.execute(sa.text(
+                        "UPDATE routers SET models=:m WHERE id=:id"),
+                        {"m": _json.dumps(rm, ensure_ascii=False),
+                         "id": row["id"]})
+    except Exception:
+        log.exception("DB qoder model name migration failed")
+        return
+    # 列值层面(纯文本列, 不走同一事务):
+    for table in ("model_rates", "dead_models", "downed_models"):
+        if table in tables:
+            _rename_qoder_rows(engine, table, log)
+
+
+def _rename_qoder_rows(engine, table, log):
+    """model_rates / dead_models / downed_models: (provider_name, model) 代号→真名。
+
+    这三张表都有 (user_id, provider_name, model) 唯一约束。真名行已存在时
+    不能直接 UPDATE(会撞唯一键), 改为删掉旧代号行 —— 新行是同一份信息,
+    目标是保持"一个模型一行"。
+    """
+    import sqlalchemy as sa
+    try:
+        with engine.begin() as conn:
+            rows = list(conn.execute(sa.text(
+                f"SELECT id, user_id, provider_name, model FROM {table} "
+                f"WHERE provider_name IN ('qoder','qodercn')")).mappings())
+            for row in rows:
+                new = _qoder_display_name(row["provider_name"], row["model"])
+                if new == row["model"]:
+                    continue
+                exists = conn.execute(sa.text(
+                    f"SELECT 1 FROM {table} WHERE user_id=:u AND provider_name=:p "
+                    f"AND model=:m"), {"u": row["user_id"],
+                                       "p": row["provider_name"], "m": new}).first()
+                if exists:
+                    conn.execute(sa.text(f"DELETE FROM {table} WHERE id=:id"),
+                                 {"id": row["id"]})
+                else:
+                    conn.execute(sa.text(
+                        f"UPDATE {table} SET model=:m WHERE id=:id"),
+                        {"m": new, "id": row["id"]})
+    except Exception:
+        log.exception("%s qoder rename failed", table)
 
 
 def get_session():

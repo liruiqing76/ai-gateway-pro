@@ -76,6 +76,18 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             .filter(ChatLog.user_id == user.id)
             .scalar() or 0
         )
+        # 等效消耗(倍率加权调用次数): UsageLog.cost 存每条调用的模型倍率,
+        # SUM 即"若全部按默认倍率计的等效调用数", 高倍率模型权重更大。
+        total_cost = (
+            session.query(func.coalesce(func.sum(UsageLog.cost), 0))
+            .filter(UsageLog.user_id == user.id)
+            .scalar() or 0
+        )
+        today_cost = (
+            session.query(func.coalesce(func.sum(UsageLog.cost), 0))
+            .filter(UsageLog.user_id == user.id, UsageLog.created_at >= today_start)
+            .scalar() or 0
+        )
         return {
             "total": int(total),
             "today": int(today),
@@ -84,6 +96,8 @@ async def usage_summary(user: User = Depends(get_current_user_from_jwt)):
             "failed": int(failed),
             "today_chars": int(today_chars),
             "total_chars": int(total_chars),
+            "today_cost": round(float(today_cost), 2),
+            "total_cost": round(float(total_cost), 2),
         }
     finally:
         session.close()

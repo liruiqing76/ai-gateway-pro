@@ -323,3 +323,104 @@ class TestMiddlewareBranches:
             assert u2.quota_reset_at > datetime.utcnow()
         finally:
             s.close()
+
+class TestLocalMode:
+    """免登录模式(单机自用): 开关打开后所有 JWT/API Key 依赖注入默认用户"""
+
+    def setup_method(self):
+        # 用例间隔离: 无论之前开关状态如何, 强制恢复鉴权
+        from backend.auth import local_mode
+        local_mode.set_auth_disabled(False)
+        local_mode._auth_disabled = None
+
+    def teardown_method(self):
+        from backend.auth import local_mode
+        local_mode.set_auth_disabled(False)
+        local_mode._auth_disabled = None
+
+    _register_last_token = None
+
+    def _register(self, username="localuser", email=None):
+        resp = client.post("/api/auth/register", json={
+            "username": username,
+            "email": email or f"{username}@example.com",
+            "password": "Test1234!",
+        })
+        TestLocalMode._register_last_token = resp.json().get("access_token")
+        return resp
+
+    def test_default_off_requires_auth(self):
+        """开关默认关闭: 无凭证 401(原有行为不变)"""
+        self._register()
+        assert client.get("/api/auth/me").status_code == 401
+        assert client.get("/api/providers").status_code == 401
+
+    def test_enable_then_all_endpoints_passwordless(self):
+        """打开开关: 无凭证访问面板与 /v1 均以默认用户通过"""
+        self._register("adminuser")
+        # 把注册用户提为 admin(默认用户优先选 admin)
+        s = get_session()
+        u = s.query(User).filter_by(username="adminuser").first()
+        u.role = "admin"
+        s.commit()
+        s.close()
+
+        token = self._register_last_token
+        resp = client.post("/api/auth/local-mode",
+                           json={"auth_disabled": True},
+                           headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert resp.json()["auth_disabled"] is True
+
+        # 免凭证: /api/auth/me 返回默认用户
+        me = client.get("/api/auth/me")
+        assert me.status_code == 200
+        assert me.json()["username"] == "adminuser"
+        # 免凭证: 管理接口/带凭证的日常接口都通
+        assert client.get("/api/providers").status_code == 200
+        # 状态查询端点本身也无需凭证
+        assert client.get("/api/auth/local-mode").json() == {"auth_disabled": True}
+
+    def test_disable_from_passwordless_state(self):
+        """免登录态下可以关闭开关(get_current_user_any 注入默认用户放行)"""
+        token = self._register().json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        client.post("/api/auth/local-mode", json={"auth_disabled": True},
+                    headers=headers)
+        # 免登录态下关闭无需凭证
+        resp = client.post("/api/auth/local-mode", json={"auth_disabled": False})
+        assert resp.status_code == 200
+        assert client.get("/api/auth/me").status_code == 401
+
+    def test_enable_requires_auth_when_enabled(self):
+        """鉴权开启时打开开关需要凭证(不能匿名把自己变成免登录)"""
+        self._register()
+        resp = client.post("/api/auth/local-mode", json={"auth_disabled": True})
+        assert resp.status_code == 401
+
+    def test_default_user_prefers_admin(self):
+        """默认用户选择: 优先 admin; 否则 id 最小"""
+        from backend.auth import local_mode
+        self._register("firstuser")
+        self._register("adminuser", email="admin@example.com")
+        s = get_session()
+        s.query(User).filter_by(username="adminuser").update({"role": "admin"})
+        s.commit()
+        s.close()
+        assert local_mode.default_user().username == "adminuser"
+
+        s = get_session()
+        s.query(User).filter_by(username="adminuser").update({"role": "user"})
+        s.commit()
+        s.close()
+        assert local_mode.default_user().username == "firstuser"
+
+    def test_state_persisted_across_reload(self):
+        """开关状态落盘: 清掉进程缓存后仍保持"""
+        from backend.auth import local_mode
+        token = self._register().json()["access_token"]
+        client.post("/api/auth/local-mode", json={"auth_disabled": True},
+                    headers={"Authorization": f"Bearer {token}"})
+        local_mode._auth_disabled = None  # 模拟重启(缓存清空)
+        assert local_mode.auth_disabled() is True
+        assert client.get("/api/auth/me").status_code == 200

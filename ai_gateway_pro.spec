@@ -14,15 +14,14 @@ WEB_DIR = BASE / 'web'
 
 
 def collect_source_tree(src, dst):
-    """源码目录进包, 但剔除运行时垃圾: __pycache__/数据库及备份/签到截图缓存/日志。
+    """源码目录进包, 但剔除运行时垃圾: __pycache__/数据库及备份/日志。
     数据库属于用户机器上的运行数据, 打进安装包既泄密又白占体积。
 
     注意 backend/data/ 不能整目录排除: 该目录同时放静态资源
     provider_templates.json / free_sources.json(模板一键添加依赖), 必须打进包。
     因此对该目录改为"只收这两个 .json, 排除 db/-shm/-wal/备份/搜索结果"的精筛。"""
     exclude_rel_prefixes = tuple(p.replace('\\', '/')
-                                 for p in ('desktop/checkin/shots/',
-                                           'desktop/logs/', 'logs/'))
+                                 for p in ('desktop/logs/', 'logs/'))
     # backend/data/ 下只保留两个静态配置资源; 其余(数据库 gateway.db 及 -shm/-wal/
     # 备份, free_models/ 搜索结果运行数据)全部排除, 避免泄密与白占体积
     DATA_REL_PREFIX = 'backend/data/'
@@ -55,12 +54,7 @@ for pkg in ['uvicorn', 'webview', 'apscheduler', 'fastapi', 'starlette',
             'typing_extensions', 'pythoncom', 'pywintypes', 'win32com',
             'webview.lib',
             # 托盘图标(关闭最小化到托盘)
-            'pystray', 'PIL._tkinter_finder',
-            # 签到脚本依赖的 OCR 运行时 + GUI 自动化(必须打进包; 脚本由 runpy
-            # 动态执行, PyInstaller 静态分析抓不到这些 import):
-            'rapidocr_onnxruntime', 'onnxruntime',
-            'pyautogui', 'pygetwindow', 'pymsgbox', 'pytweening', 'pyrect',
-            'pyperclip', 'mouseinfo', 'PIL', 'numpy']:
+            'pystray', 'PIL', 'PIL._tkinter_finder']:
     try:
         d, b, h = collect_all(pkg)
         datas += d
@@ -69,8 +63,7 @@ for pkg in ['uvicorn', 'webview', 'apscheduler', 'fastapi', 'starlette',
     except Exception:
         pass
 
-# sqlalchemy 只收代码与扩展, 不用 collect_all(会连带 docs/examples 多吃 ~10MB);
-# numpy 同理只由上面 OCR 链的 collect_all 覆盖。二者均由 runpy 动态加载, 必须显式声明。
+# sqlalchemy 只收代码与扩展, 不用 collect_all(会连带 docs/examples 多吃 ~10MB)
 hiddenimports += collect_submodules('sqlalchemy')
 binaries += collect_dynamic_libs('sqlalchemy')
 
@@ -98,14 +91,13 @@ a = Analysis(
     excludes=['tkinter', 'matplotlib', 'pandas', 'PySide6',
               'pytest', '_pytest', 'py', 'pluggy', 'iniconfig', 'packaging',
               # 全局环境里的重依赖会被依赖分析连带拖入(如 pywebview 的 Qt 备用
-              # 后端; onnxruntime hook 会连带 onnxruntime.transformers ->
-              # transformers -> huggingface_hub -> sklearn 整条训练侧依赖),
-              # 项目代码与签到 OCR(onnxruntime 推理本体)均不使用。
+              # 后端), 项目代码均不使用, 显式排除兜底。
               # 注意: sklearn 与 scipy 必须同时排除, 只留一个会运行时 ImportError:
               'torch', 'torchaudio', 'torchvision', 'scipy', 'sklearn',
               'moviepy', 'PyQt5', 'IPython',
               'transformers', 'huggingface_hub', 'yt_dlp', 'curl_cffi',
-              'mutagen'],
+              'mutagen', 'numpy', 'onnxruntime', 'rapidocr_onnxruntime',
+              'pyautogui'],
     noarchive=False,
 )
 
@@ -133,9 +125,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # 固定解包目录(不再是 %TEMP%/_MEI* 随机路径): 安全软件(火绒等)常隔离
-    # %TEMP% 里解包出的 onnxruntime 原生二进制, 导致签到 OCR 失效"永远没返回"。
-    # 固定到项目根 runtime_tmp/ 后, 把该目录加入信任区即可一劳永逸;
-    # desktop.py 启动时也会自检 OCR 组件是否被杀软删除。
+    # 固定解包目录(不再是 %TEMP%/_MEI* 每次启动随机新目录): 避免每次启动都在
+    # %TEMP% 复制一份整包垃圾; 目录固定也便于安全软件信任区管理与升级清理。
     runtime_tmpdir=str(BASE / 'runtime_tmp'),
 )

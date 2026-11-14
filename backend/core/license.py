@@ -87,14 +87,40 @@ async def verify_local_binding(machine_code: str, email: str) -> LicenseResult:
                 return LicenseResult(False, "无法采集本机机器码, 设备绑定校验失败", locked=True)
             return LicenseResult(True, "")
 
-        # 账号已绑定机器码 → 必须一致
+        # 采集探针整体失败(只剩主机名): 不拿它去跟绑定值比, 否则网络/权限抖动
+        # 就会把用户锁在门外。要求硬件校验时仍然拒绝。
+        try:
+            import backend.core.machine as _mc2
+            hw_ok = _mc2.machine_code_available()
+        except Exception:
+            hw_ok = True
+        if not hw_ok:
+            if settings.LICENSE_ENABLED and getattr(settings, "REQUIRE_HARDWARE", False):
+                return LicenseResult(False, "无法采集硬件信息, 设备绑定校验失败", locked=True)
+            logger.warning("本机硬件信息采集失败, 本轮跳过设备绑定校验")
+            return LicenseResult(True, "")
+
+        # 账号已绑定机器码 → 必须一致(或属于本机的历史算法机器码)
         if user.machine_code:
             if user.machine_code != machine_code:
-                return LicenseResult(
-                    False,
-                    "账号已绑定其他设备, 当前机器与账号不匹配, 已被锁定",
-                    locked=True,
-                )
+                import backend.core.machine as _mc
+                try:
+                    candidates = _mc.machine_code_candidates()
+                except Exception as e:      # 采集失败不能把用户锁在门外
+                    logger.warning("machine_code_candidates failed: %s", e)
+                    candidates = set()
+                if user.machine_code not in candidates:
+                    return LicenseResult(
+                        False,
+                        "账号已绑定其他设备, 当前机器与账号不匹配, 已被锁定",
+                        locked=True,
+                    )
+                # 命中的是旧算法机器码: 静默迁移到当前稳定机器码
+                old_code = user.machine_code
+                user.machine_code = machine_code
+                session.commit()
+                logger.info("机器码已从旧算法迁移: …%s → …%s",
+                            old_code[-8:], machine_code[-8:])
             return LicenseResult(True, "")
 
         # 账号尚未绑定: 若本机机器码已被其他账号占用 → 拒绝(单机单账号)

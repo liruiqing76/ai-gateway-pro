@@ -57,7 +57,7 @@ def test_fetch_zen_free_models_parses(monkeypatch):
         {"id": "claude-opus-5", "object": "model"},
         {"id": "big-pickle", "object": "model"},    # 官方免费模型白名单, 必须收
     ]}
-    monkeypatch.setattr(zen_sources.httpx, "get", lambda *a, **k: _FakeResp(payload))
+    _patch_zen_get(monkeypatch, lambda *a, **k: _FakeResp(payload))
     got = zen_sources.fetch_zen_free_models()
     assert got == ["big-pickle", "deepseek-v4-flash-free", "hy3-free"]
     assert "glm-5" not in got and "claude-opus-5" not in got
@@ -67,8 +67,20 @@ def test_fetch_zen_free_models_upstream_down(monkeypatch):
     """上游目录拉取失败 → 空列表, 不抛异常(交由探测全灭保护兜底)。"""
     def boom(*a, **k):
         raise RuntimeError("connection refused")
-    monkeypatch.setattr(zen_sources.httpx, "get", boom)
+    _patch_zen_get(monkeypatch, boom)
     assert zen_sources.fetch_zen_free_models() == []
+
+
+def _patch_zen_get(monkeypatch, get_fn):
+    """zen 拉目录走 upstream_http.make_sync 工厂 → 打这个缝。"""
+    from backend.core import upstream_http
+
+    class _Ctx:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, *a, **k): return get_fn(*a, **k)
+
+    monkeypatch.setattr(upstream_http, "make_sync", lambda **kw: _Ctx())
 
 
 class _FakeResp:
@@ -108,6 +120,51 @@ def test_sync_creates_provider_with_usable_only(setup_db, monkeypatch):
     assert r is not None                       # 自动维护路由组
     assert r.models == ["opencode-nemotron-3.5-lightning-free", "opencode-hy3-free"]
     s.close()
+
+
+def test_sync_lane_closed_keeps_models(setup_db, monkeypatch):
+    """全部 403 FreeTierError = 车道对当前出口关闭(出口属性, 非模型裁决):
+    对齐插件 probe.js 的 unknown 语义 —— 模型全部保留, lane_state=closed。"""
+    from backend.models import Provider
+    make_user(setup_db)
+    monkeypatch.setattr(zen_sources, "fetch_zen_free_models", lambda: FREE_MODELS)
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _FakeProbe(
+        [], fail_reason='403 {"type":"error","error":{"type":"FreeTierError",'
+                        '"message":"OpenCode\'s free tier can only be used"}}'))
+    r = zen_sources.sync_zen_free_models()
+    assert r["ok"] is True
+    assert r["lane_state"] == "closed"
+    assert r["usable"] == FREE_MODELS          # 一个不踢
+    assert r["unusable"] == {}
+    s = setup_db.get_session()
+    prov = s.query(Provider).filter_by(base_url=ZEN).first()
+    assert prov.models == FREE_MODELS
+    s.close()
+
+
+def test_health_lane_closed_keeps_models(setup_db, monkeypatch):
+    """健康检测遇车道关闭(全 403 FreeTier/Region) → 不累计失败不清理;
+    真下架(400 named)仍按阈值移除。"""
+    make_user(setup_db)
+    monkeypatch.setattr(zen_sources, "fetch_zen_free_models", lambda: FREE_MODELS)
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _FakeProbe(FREE_MODELS))
+    zen_sources.sync_zen_free_models()
+
+    # 车道整体关闭: 全部 403 FreeTierError → 保留
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _FakeProbe(
+        [], fail_reason='403 {"error":{"type":"FreeTierError"}}'))
+    for _ in range(5):   # 远超失败阈值也不掉
+        r = zen_sources.health_check_zen_models()
+        assert r["removed"] == []
+
+    # 点名不可用(非出口属性) → 按阈值(默认2次)移除
+    monkeypatch.setattr(zen_sources, "probe_zen_model", _FakeProbe(
+        ["hy3-free"], fail_reason="400 model not supported"))
+    r = zen_sources.health_check_zen_models()      # 第1次失败: 未达阈值
+    assert r["removed"] == []
+    r = zen_sources.health_check_zen_models()      # 第2次: 达阈值移除
+    assert set(r["removed"]) == {"deepseek-v4-flash-free", "glm-5-free",
+                                 "nemotron-3.5-lightning-free"}
 
 
 def test_health_removes_after_fail_limit(setup_db, monkeypatch):

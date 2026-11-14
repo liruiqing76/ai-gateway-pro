@@ -24,6 +24,7 @@ from backend.auth.middleware import get_current_user_from_api_key, get_current_u
 from backend.auth.security import decrypt_secret
 from backend.core.proxy import (
     pick_available_models,
+    pick_fallback_models,
     forward_non_stream,
     forward_stream,
     get_context_length,
@@ -41,10 +42,12 @@ from backend.core.chat_log import (
     set_probe_mode, is_probe_mode, estimate_tokens_from_text,
 )
 from backend.core.router_group import classify_model
+from backend.core.hint import unavailable_reason
 from backend.core import vision
 from backend.core.orchestrate import _extract_text
 from backend.config import settings
-from backend.models import get_session, User, Provider, Router, UsageLog, ModelAlias
+from backend.models import get_session, User, Provider, Router, UsageLog, ModelAlias, ModelRate
+from backend.core.dead_models import banned_keys
 
 logger = logging.getLogger("gateway.proxy")
 router = APIRouter(prefix="/v1", tags=["proxy"])
@@ -257,6 +260,14 @@ def _log_usage_and_quota(*, user, provider_name, model_name, pt, ct, tag="usage"
     try:
         session = get_session()
         try:
+            # 积分消耗倍率(渠道-模型级, 未设置=1.0): 落库为 cost,
+            # 用量统计按 SUM(cost) 展示"等效调用次数"
+            rate_row = (
+                session.query(ModelRate.rate)
+                .filter_by(user_id=user.id, provider_name=provider_name,
+                           model=model_name)
+                .first()
+            )
             session.add(UsageLog(
                 user_id=user.id,
                 provider_name=provider_name,
@@ -264,6 +275,7 @@ def _log_usage_and_quota(*, user, provider_name, model_name, pt, ct, tag="usage"
                 prompt_tokens=pt,
                 completion_tokens=ct,
                 total_tokens=pt + ct,
+                cost=float(rate_row[0]) if rate_row else 1.0,
                 success=True,
             ))
             # 原子自增: 旧实现是读 ORM user 再 merge 写回, 并发请求会互相覆盖丢计数
@@ -404,26 +416,51 @@ async def _stream_with_fallback(
 _http_client: httpx.AsyncClient | None = None
 
 
+def _make_upstream_client() -> httpx.AsyncClient:
+    """构造上游出站 client(代理策略见 GW_UPSTREAM_PROXY / upstream_http)。
+
+    实测(2026-10-24, 本机): 默认出站被半死的系统代理拖死(所有上游 EOF),
+    显式 transport 或 trust_env=False 直连全部可达 → 用工厂统一可配。
+    """
+    from backend.core import upstream_http
+    return upstream_http.make_async(timeout=120)
+
+
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient(timeout=120)
+        _http_client = _make_upstream_client()
     return _http_client
 
 
 # ============================================================
 # POST /v1/chat/completions — OpenAI 兼容代理
 # ============================================================
+def _long_cooldown_active(key: str) -> bool:
+    """该 key 是否已进入"确定性不可用"的 24h 长冷却。
+
+    实现上「先记一次计数, 再看冷却状态」而不是只看 `record_not_found()` 的返回值:
+    core/proxy.py 在识别到确定性错误时已经调过一次 `record_not_found`, 两边共用
+    同一个 `_not_found_count`, 于是"刚判定为死模型"这个 True 有可能落在 core 那次
+    调用上(它不看返回值), api 这次拿到 False → 移除动作永远不发生(实测: 日志已打
+    "model marked dead" 但模型仍在路由组里)。
+    计数照记(直接由 api 层驱动的路径, 如单测与人工修复, 仍能自行达到阈值), 同时
+    以「是否已处于长冷却(≥1h)」这个状态量为准 —— 与调用次数无关, 幂等且可靠。
+    """
+    circuit_breaker.record_not_found(key)
+    return circuit_breaker.cooldown_seconds(key) >= 3600
+
+
 def _handle_upstream_404(user, provider, model: str, err) -> None:
     """上游确定性"模型不可用"错误处理: 判定死模型 → 彻底移除 + 永久拉黑。
 
     覆盖 404/410(模型不存在/已下架)与模型级 400(无服务商支持/未开通,
     由 core/proxy.py 标记为 "upstream 400 (dead model)")。
 
-    连续 3 次是"确定性不可用"错误, 之后:
-      1) 24h 长冷却: 立刻不再尝试, 请求不再被它拖住;
-      2) 从该用户全部路由组彻底删除(写库永久, 热生效);
-      3) 拉黑登记 dead_models(写库永久): 刷新模型/自动分类/兜底池此后
+    判定条件: 该 (渠道,模型) 已进入 24h 长冷却 —— 即 core 层已连续
+    DEAD_MODEL_THRESHOLD 次确认它确定性不可用。之后:
+      1) 从该用户全部路由组彻底删除(写库永久, 热生效);
+      2) 拉黑登记 dead_models(写库永久): 刷新模型/自动分类/兜底池此后
          都不会再把它带回来 —— 没有恢复的必要。
     用户显式手动加回仍可行(那是用户意图); 若仍报错 → 再次移除+拉黑(幂等)。
     """
@@ -434,7 +471,7 @@ def _handle_upstream_404(user, provider, model: str, err) -> None:
             and "dead model" not in msg):
         return
     key = f"{provider.name}||{model}"
-    if not circuit_breaker.record_not_found(key):
+    if not _long_cooldown_active(key):
         return
     entry = f"{provider.name}-{model}"
     from backend.models import get_session, Router
@@ -454,6 +491,42 @@ def _handle_upstream_404(user, provider, model: str, err) -> None:
     ban_model(user.id, provider.name, model)
     logger.warning(
         "dead model %s removed from %d group(s) & banned permanently",
+        entry, removed,
+    )
+
+
+def _handle_tier_block(user, provider, model: str, err) -> None:
+    """账号等级限制(如 workbuddy 11158 personal_free_user): 移出路由组, 但不拉黑。
+
+    与 `_handle_upstream_404` 的区别是**不写 dead_models 永久黑名单** —— 这类
+    拒绝是"当前账号类型不支持", 用户升级套餐/换账号后同一个模型名就能用,
+    永久拉黑会把它再也带不回来。这里只做两件事:
+      1) 24h 长冷却(由 core/proxy.py 的 record_not_found 负责), 期间不再白试;
+      2) 从该用户路由组里移除, 让组内其它模型不必每次都多等一轮。
+    下次刷新模型时若上游仍返回该模型, 会重新进组(仍受冷却保护)。
+    """
+    if not err or "账号等级" not in str(err):
+        return
+    key = f"{provider.name}||{model}"
+    if not _long_cooldown_active(key):
+        return
+    entry = f"{provider.name}-{model}"
+    from backend.models import get_session, Router
+    removed = 0
+    s = get_session()
+    try:
+        for r in s.query(Router).filter_by(user_id=user.id).all():
+            ms = r.models or []
+            if entry in ms:
+                r.models = [m for m in ms if m != entry]
+                removed += 1
+        if removed:
+            s.commit()
+    finally:
+        s.close()
+    logger.warning(
+        "tier-blocked model %s removed from %d group(s) (not banned; "
+        "cooldown 24h, upgrade account or refresh models to retry)",
         entry, removed,
     )
 
@@ -486,6 +559,66 @@ def _maybe_down_model(user, provider, model: str, err) -> None:
     reason = _infer_down_reason(err)
     down_model(user.id, provider.name, model, reason=reason)
     logger.warning("model %s auto-downed & persisted (reason=%s)", key, reason)
+
+
+_CRED_REJECT_HINTS = (
+    "渠道凭据已过期或失效",
+    "re-authenticate",
+    "unauthorized",
+    "invalid access token",
+    "security token has expired",
+    "apig.0602",
+    "sts5.1806",
+    "invalid refresh token",
+    "token has been used",
+    # 兜底: 未识别具体文案的 401/403 也先试一次刷新(仅白嫖渠道会真去刷,
+    # 付费渠道在 _heal_credential 里直接返回 None, 不会白耗请求)
+    "upstream 401",
+    "upstream 403",
+)
+
+
+def _looks_like_cred_reject(err: str | None) -> bool:
+    """失败原因是"上游拒绝了这份凭据"吗(而不是限流/模型不存在/超时)。
+
+    只有这类失败值得现场刷新凭据后原地重试; 别的失败刷了也白刷。
+    """
+    text = str(err or "").lower()
+    return any(h.lower() in text for h in _CRED_REJECT_HINTS)
+
+
+def _skip_provider_after_fail(provider: Provider, skip: set[int]) -> bool:
+    """失败后若该渠道已进入渠道级冷却, 把这次请求里它的其余模型也跳过。
+
+    依据是 `record_provider_rate_limit(provider_id, quota=...)` 记下的渠道冷却:
+    同渠道模型共享额度(典型是 opencode 免费车道的 9 个模型), 一次 429 之后
+    再挨个试别的模型只会白打上游 N 次。返回 True 表示已标记跳过。
+    """
+    try:
+        if circuit_breaker.provider_in_cooldown(provider.id):
+            skip.add(provider.id)
+            return True
+    except Exception:  # pragma: no cover - 纯优化, 不能影响主流程
+        pass
+    return False
+
+
+async def _heal_credential(provider: Provider, api_key: str) -> str | None:
+    """凭据自愈: 强制刷新该渠道凭据并回写, 返回新的 api_key(失败返回 None)。
+
+    只在白嫖渠道上生效(它们的 api_key 是 JSON 凭据包, 且都有 refresh 通道);
+    普通付费渠道的 key 刷不了, 直接返回 None 走原有失败路径。
+    """
+    from backend.core.channel_auth import is_channel_provider
+    if not is_channel_provider(provider.name):
+        return None
+    try:
+        from backend.core.checkin import refresh_provider_credentials
+        return await refresh_provider_credentials(
+            provider.id, provider.name, api_key)
+    except Exception:
+        logger.exception("凭据自愈失败: %s(id=%s)", provider.name, provider.id)
+        return None
 
 
 @router.post("/chat/completions")
@@ -821,24 +954,42 @@ async def proxy_chat(
             prompt_text=prompt_text, success=False, error_msg="无可用模型",
             is_stream=stream, latency_ms=trace.latency_ms,
         )
-        raise HTTPException(503, f"无可用的模型: {requested_model or '任意'}")
+        raise HTTPException(
+            503,
+            f"无可用的模型: {requested_model or '任意'}"
+            + unavailable_reason(providers, requested_model or ""),
+        )
 
     # 解析后的目标(别名/路由组)
     if requested_model and requested_model != (trace.resolved_model or requested_model):
         trace.resolved_model = requested_model
 
-    # 兜底: 如果所有候选都失败,放宽到同一渠道的其他模型
-    fallback_candidates = pick_available_models(providers, None, routers, user_aliases=user_aliases)
+    # 兜底: 如果所有候选都失败,放宽到同一渠道的其他模型。
+    # 路由组保持分组隔离(model=qodercn 只允许 qodercn 渠道), 由 pick_fallback_models 保证
+    fallback_candidates = pick_fallback_models(
+        providers, requested_model, routers, user_aliases=user_aliases)
 
     client = await get_http_client()
     last_err = None
+    # 主候选(用户点名那个模型/组内首选)的失败原因单独留一份。
+    # 不能只用 last_err: 兜底会把同渠道其它模型也试一遍, 最后一条错误往往来自
+    # 一个完全不同的模型 —— 例如点名 opencode-glm-5.3-flash-free(当日额度耗尽)
+    # 却因为兜底打到 beam-free(地区封锁)而提示"该模型在当前出口地区不可用",
+    # 用户会以为换个出口就行, 实际是等额度重置。
+    primary_err = None
+    primary_label = None
     total_usage = None
 
     # 主候选 + 兜底合并,去重
-    seen = set()
+    # 注意: 主候选必须先登记进 seen, 否则兜底里与主候选重复的 (provider, model)
+    # 会被再追加一次 —— 同一候选在一轮里被打两遍, 第二遍必然撞上第一遍刚
+    # 打开的熔断, 最后把 "breaker open" 当成真实失败原因回给用户。
+    seen = {(p.id, m) for p, m in candidates}
     all_candidates = candidates.copy()
+    # 主候选集合: 只有它们能代表"用户点名的那个模型"的失败原因
+    primary_keys = set(seen)
     for fb in fallback_candidates:
-        if fb not in seen:
+        if (fb[0].id, fb[1]) not in seen:
             seen.add((fb[0].id, fb[1]))
             all_candidates.append(fb)
 
@@ -880,7 +1031,14 @@ async def proxy_chat(
         )
     all_candidates = usable
 
+    # 渠道级冷却(配额/限流): 同一渠道的模型共享同一份额度, 一旦被判渠道冷却,
+    # 本轮请求里直接跳过它的其余模型 —— 否则 opencode 这种 9 模型分组会为一次
+    # 调用白打 9 次上游(既是浪费, 也容易被上游当成刷量)。
+    cooldown_skip: set[int] = set()
+
     for provider, model in all_candidates:
+        if provider.id in cooldown_skip:
+            continue
         api_key = decrypted.get(provider.id, "")
         # 免 key 渠道(如 opencode zen)存的是空串, 放行; 有存储但解密失败/未配才算不合法
         if not api_key and provider.api_key_encrypted:
@@ -893,12 +1051,25 @@ async def proxy_chat(
             # 熔断中的候选直接跳过(与自动识图/流式 fallback 的行为一致),
             # 不再每次请求都白打一次; 冷却到期后自动恢复参与路由。
             trace.mark_circuit_breaker(True)
-            last_err = f"breaker open: {provider.name}/{model}"
+            # 只在还没有真实失败原因时才用 breaker open 兜底 —— 否则会把
+            # "该模型配额耗尽"之类的真实原因覆盖成一句无信息量的熔断提示。
+            if last_err is None:
+                last_err = f"breaker open: {provider.name}/{model}"
             continue
 
         if stream:
             _t0 = time.time()
             resp, err = await forward_stream(client, provider, api_key, model, body)
+            if resp is None and _looks_like_cred_reject(err):
+                # 凭据自愈: 上游拒绝了这个 token(可能本地时间还没到), 现场刷一次
+                # 并原地重试同一候选, 免得整条请求因一次 token 吊销而失败。
+                new_key = await _heal_credential(provider, api_key)
+                if new_key:
+                    decrypted[provider.id] = new_key
+                    resp, err = await forward_stream(
+                        client, provider, new_key, model, body)
+            if resp is None and primary_err is None and (provider.id, model) in primary_keys:
+                primary_err, primary_label = err, f"{provider.name}/{model}"
             if resp is not None:
                 # 流式 fallback: 主候选断流或"200 空流"时, 由 _stream_with_fallback 切换候选
                 remaining = [(p, m) for p, m in all_candidates
@@ -939,17 +1110,31 @@ async def proxy_chat(
             if "429" in str(err) or "rate" in str(err).lower():
                 trace.mark_rate_limit(True)
             _handle_upstream_404(user, provider, model, err)
+            _handle_tier_block(user, provider, model, err)
             _maybe_down_model(user, provider, model, err)
             # 失败尝试留痕: 可靠性统计按渠道/模型归因失败率, 不记就永远"100% 成功"
             trace.add_stage(len(trace.stages_detail), provider.name, model,
                             int((time.time() - _t0) * 1000), False,
                             str(err or "stream failed")[:200])
             logger.warning("stream fallback: %s failed, trying next: %s", f"{provider.name}/{model}", err)
+            _skip_provider_after_fail(provider, cooldown_skip)
             continue
 
         # 非流式
         _t0 = time.time()
         resp, err = await forward_non_stream(client, provider, api_key, model, body)
+        if resp is None and _looks_like_cred_reject(err):
+            new_key = await _heal_credential(provider, api_key)
+            if new_key:
+                decrypted[provider.id] = new_key
+                resp, err = await forward_non_stream(
+                    client, provider, new_key, model, body)
+        if resp is None and _skip_provider_after_fail(provider, cooldown_skip):
+            # 渠道级配额/限流冷却(opencode 免费额度 429 等): 同一渠道剩下的
+            # 模型共享同一份额度, 这次请求里继续试只是白打上游 —— 直接跳过。
+            pass
+        if resp is None and primary_err is None and (provider.id, model) in primary_keys:
+            primary_err, primary_label = err, f"{provider.name}/{model}"
         if resp is not None:
             # 防护: 上游返回 200 但 choices=null(魔搭在小 max_tokens 时会这样)
             choices = resp.get("choices")
@@ -990,6 +1175,7 @@ async def proxy_chat(
                         int((time.time() - _t0) * 1000), False,
                         str(err or "forward failed")[:200])
         _handle_upstream_404(user, provider, model, err)
+        _handle_tier_block(user, provider, model, err)
         _maybe_down_model(user, provider, model, err)
         last_err = err
 
@@ -1002,7 +1188,10 @@ async def proxy_chat(
         error_msg=str(last_err or "all candidates failed"),
         is_stream=stream, latency_ms=trace.latency_ms,
     )
-    raise HTTPException(502, f"所有候选模型均失败: {last_err}")
+    # 优先回主候选(用户点名那个模型)的真实原因: 兜底候选的失败原因常常是
+    # 另一件事(如 beam-free 地区封锁), 拿它当结论会把用户引向错误处置。
+    final_err = primary_err or last_err
+    raise HTTPException(502, f"所有候选模型均失败: {final_err}")
 
 
 # ============================================================
@@ -1018,6 +1207,12 @@ async def proxy_models(
             user_id=user.id, enabled=True
         ).all()
         router_rows = session.query(Router).filter_by(user_id=user.id)            .order_by(Router.name, Router.id).all()
+        # 计费倍率(渠道-模型级): workbuddy/lobsterai 登录时从上游目录同步,
+        # 其余手填; 未设置的模型等效 1.0。暴露给客户端作参考(x-gw-rate)。
+        rate_map = {
+            (r.provider_name, r.model): r.rate
+            for r in session.query(ModelRate).filter_by(user_id=user.id).all()
+        }
 
         models_list = []
 
@@ -1030,15 +1225,43 @@ async def proxy_models(
                 "created": 0,
             })
 
-        # 所有渠道的模型
+        # 裸模型名(全渠道去重并集): pick_available_models 对裸名做精确匹配,
+        # 填裸名即自动在所有提供它的渠道间路由+故障转移, 无需配置路由组。
+        # 放在组名之后、渠道前缀条目之前, 客户端能直接看到"可以填什么名"。
+        dead_keys = banned_keys(user.id)
+        bare_models: dict[str, list[str]] = {}
         for p in providers:
             for m in (p.models or []):
                 if m in (p.disabled_models or []):
+                    continue
+                if f"{p.name}||{m}" in dead_keys:
+                    continue
+                bare_models.setdefault(m, []).append(p.name)
+        for m, owners in bare_models.items():
+            # 同一裸模型在多渠道的倍率可能不同, 报最低值(路由时免费/低倍渠道优先)
+            owner_rates = [float(rate_map.get((pn, m), 1.0)) for pn in owners]
+            models_list.append({
+                "id": m,
+                "object": "model",
+                "owned_by": "gateway",
+                "x-gw-providers": owners,
+                "x-gw-rate": min(owner_rates) if owner_rates else 1.0,
+                "context_length": get_context_length(m),
+                "created": 0,
+            })
+
+        # 所有渠道的模型(渠道名前缀条目; 死模型已被候选池剔除, 列表同步隐藏)
+        for p in providers:
+            for m in (p.models or []):
+                if m in (p.disabled_models or []):
+                    continue
+                if f"{p.name}||{m}" in dead_keys:
                     continue
                 models_list.append({
                     "id": f"{p.name}-{m}",
                     "object": "model",
                     "owned_by": p.name,
+                    "x-gw-rate": float(rate_map.get((p.name, m), 1.0)),
                     "context_length": get_context_length(m),
                     "created": 0,
                 })

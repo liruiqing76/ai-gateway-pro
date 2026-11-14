@@ -22,6 +22,11 @@ from backend.models import create_tables
 from backend.auth.routes import router as auth_router
 from backend.api.providers import router as providers_router
 from backend.api.proxy import router as proxy_router
+from backend.api.anthropic import router as anthropic_router
+from backend.api.anthropic import anthropic_http_exception_handler
+from backend.api.responses import router as responses_router
+from backend.api.responses import responses_http_exception_handler
+from backend.api.channels import router as channels_router
 from backend.billing.routes import router as billing_router
 from backend.api.routers import router as routers_router
 from backend.api.router_check import router as check_router
@@ -36,6 +41,7 @@ from backend.api.free_sources import router as free_sources_router
 from backend.api.free_model_search import router as free_model_search_router
 from backend.api.downed_models import router as downed_models_router
 from backend.api.dead_model_api import router as dead_model_router
+from backend.api.model_catalog import router as model_catalog_router
 
 # 日志: 控制台 + 文件(exe 打包后 windowed 无 stderr, 500 堆栈只能靠文件日志排查)
 _LOG_ROOT = (Path(os.environ.get("GW_DB_PATH", "")).resolve().parent.parent
@@ -171,6 +177,12 @@ async def lifespan(app: FastAPI):
 
     async def _zen_health_loop():
         if not settings.ZEN_AUTO_SYNC:
+            return
+        if settings.ZEN_HEALTH_CHECK_MINUTES <= 0:
+            # 默认关闭: 体检=对每个模型发真实 chat 请求, 会提前烧光公共免费额度。
+            # 死模型由真实流量判定(400 连续 3 次 → 长冷却 + 移出路由组)。
+            logger.info("opencode 定时体检未启用(ZEN_HEALTH_CHECK_MINUTES=0), "
+                        "死模型改由真实流量判定")
             return
         await asyncio.sleep(480)  # 首次健康检测等同步完成后
         while True:
@@ -336,6 +348,69 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("每日额度重置异常: %s", e)
 
+    # Kilo 公共网关免费池(免认证): zen 匿名车道被上游 v2 门收紧期间的免费池
+    # (2026-10-24 实测 kilo 200 可用 / 车道实现见 opencode_free.py 等网络恢复)
+    from backend.core.kilo_sources import sync_kilo_free_models
+
+    async def _kilo_sync_loop():
+        if not settings.KILO_AUTO_SYNC:
+            logger.info("kilo 免费池同步未启用")
+            return
+        await asyncio.sleep(300)  # 等服务稳定, 排在 zen 同步之后
+        while True:
+            try:
+                r = await asyncio.to_thread(sync_kilo_free_models)
+                logger.info("kilo 免费池同步: 发现%d个, 落地%d个, 探测失败%d, 用户%d",
+                            r.get("total_free", 0), len(r.get("usable", [])),
+                            len(r.get("unusable", {})), r.get("users_updated", 0))
+            except Exception as e:
+                logger.warning("kilo 免费池同步异常: %s", e)
+            await asyncio.sleep(settings.KILO_SYNC_HOURS * 3600)
+
+    # 白嫖渠道每日签到(HTTP 接口版, 参考 dsh-our-free-model auto-checkin):
+    # 每天定点对所有已连接且支持签到接口的渠道(如 CodeArts)自动领取每日积分。
+    # UTC+8 自然日防重由 core/checkin.py 落盘状态保证。
+    async def _channel_checkin_loop():
+        if not settings.CHANNEL_CHECKIN_ENABLED:
+            logger.info("渠道每日签到未启用")
+            return
+        from backend.core.checkin import run_checkin_for_all_users
+
+        await asyncio.sleep(settings.CHANNEL_CHECKIN_START_DELAY)
+        try:
+            await run_checkin_for_all_users()
+        except Exception as e:
+            logger.warning("渠道签到(启动补跑)异常: %s", e)
+        while True:
+            try:
+                HH, MM = (settings.CHANNEL_CHECKIN_TIME or "09:30").split(":")
+                now = datetime.now()
+                target = now.replace(hour=int(HH), minute=int(MM),
+                                     second=0, microsecond=0)
+                if target <= now:
+                    target += timedelta(days=1)
+                await asyncio.sleep((target - now).total_seconds())
+                await run_checkin_for_all_users()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("渠道签到异常: %s", e)
+                await asyncio.sleep(3600)
+
+    # 渠道凭据保活: 参考插件 refreshAllCredentials(每 30 分钟批量续期)。
+    # 推理路径不同步等刷新, 靠本循环把白嫖渠道凭据始终保持在有效期内。
+    async def _channel_credential_keepalive_loop():
+        from backend.core.checkin import refresh_all_expiring
+        await asyncio.sleep(60)  # 等服务稳定
+        while True:
+            try:
+                await refresh_all_expiring()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("渠道凭据保活异常: %s", e)
+            await asyncio.sleep(1800)
+
     quota_reset_task = asyncio.create_task(_daily_quota_reset_loop())
     dead_recovery_task = asyncio.create_task(_dead_model_recovery_loop())
     zen_sync_task = asyncio.create_task(_zen_sync_loop())
@@ -343,6 +418,9 @@ async def lifespan(app: FastAPI):
     bai_sync_task = asyncio.create_task(_bai_sync_loop())
     bai_health_task = asyncio.create_task(_bai_health_loop())
     free_model_search_task = asyncio.create_task(_free_model_search_loop())
+    kilo_sync_task = asyncio.create_task(_kilo_sync_loop())
+    channel_checkin_task = asyncio.create_task(_channel_checkin_loop())
+    channel_keepalive_task = asyncio.create_task(_channel_credential_keepalive_loop())
     yield
     speed_task.cancel()
     summary_task.cancel()
@@ -353,7 +431,10 @@ async def lifespan(app: FastAPI):
     bai_health_task.cancel()
     quota_reset_task.cancel()
     free_model_search_task.cancel()
+    kilo_sync_task.cancel()
     dead_recovery_task.cancel()
+    channel_checkin_task.cancel()
+    channel_keepalive_task.cancel()
     try:
         await speed_task
         await summary_task
@@ -364,8 +445,18 @@ async def lifespan(app: FastAPI):
         await bai_health_task
         await quota_reset_task
         await free_model_search_task
+        await kilo_sync_task
         await dead_recovery_task
+        await channel_checkin_task
+        await channel_keepalive_task
     except asyncio.CancelledError:
+        pass
+    # Qoder 签名器常驻 node 进程: 服务停止时回收(不留孤儿进程)
+    try:
+        from backend.core.channel_auth import qoder as qoder_mod
+        if qoder_mod._signer is not None:
+            await qoder_mod._signer.shutdown()
+    except Exception:
         pass
     logger.info("智能网关 已停止")
 
@@ -408,11 +499,14 @@ async def frenchie_logo_png():
 app.include_router(auth_router)
 app.include_router(providers_router)
 app.include_router(proxy_router)
+app.include_router(anthropic_router)
+app.include_router(responses_router)
 app.include_router(billing_router)
 app.include_router(routers_router)
 app.include_router(check_router)
 app.include_router(usage_router)
 app.include_router(aliases_router)
+app.include_router(model_catalog_router)
 app.include_router(traces_router)
 app.include_router(chats_router)
 app.include_router(requests_router)
@@ -422,6 +516,21 @@ app.include_router(free_sources_router)
 app.include_router(free_model_search_router)
 app.include_router(downed_models_router)
 app.include_router(dead_model_router)
+app.include_router(channels_router)
+
+# 协议面错误形状: /v1/messages* → {"type":"error","error":{...}}(Anthropic),
+# /v1/responses* → {"error":{...}}(Responses), 其它路径保持 FastAPI 默认
+# {"detail": ...} 不变。两个 handler 各自已按路径前缀判断, 这里做一层分派。
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+
+
+async def _protocol_exception_handler(request, exc: FastAPIHTTPException):
+    if request.url.path.startswith("/v1/responses"):
+        return await responses_http_exception_handler(request, exc)
+    return await anthropic_http_exception_handler(request, exc)
+
+
+app.add_exception_handler(FastAPIHTTPException, _protocol_exception_handler)
 
 
 @app.get("/")

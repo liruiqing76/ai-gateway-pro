@@ -20,6 +20,9 @@
             <el-menu-item index="providers">
               <el-icon><Connection /></el-icon><span>{{ $t('app.nav.providers') }}</span>
             </el-menu-item>
+            <el-menu-item index="channels">
+              <el-icon><MagicStick /></el-icon><span>{{ $t('app.nav.channels') }}</span>
+            </el-menu-item>
             <el-menu-item index="models">
               <el-icon><Cpu /></el-icon><span>{{ $t('app.nav.models') }}</span>
             </el-menu-item>
@@ -86,6 +89,7 @@
           <div class="content-shell">
             <Dashboard v-if="activePage === 'dashboard'" />
             <Providers v-if="activePage === 'providers'" />
+            <Channels v-if="activePage === 'channels'" />
             <Models v-if="activePage === 'models'" />
             <ApiKey v-if="activePage === 'apikey'" />
             <Billing v-if="activePage === 'billing'" />
@@ -108,10 +112,12 @@ import { useI18n } from 'vue-i18n'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import enUs from 'element-plus/es/locale/lang/en'
 import { setLocale } from './i18n'
+import api from './api'
 
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Providers from './views/Providers.vue'
+import Channels from './views/Channels.vue'
 import Models from './views/Models.vue'
 import ApiKey from './views/ApiKey.vue'
 import Billing from './views/Billing.vue'
@@ -147,7 +153,28 @@ onMounted(() => {
   const hash = window.location.hash.replace('#/', '')
   if (hash) activePage.value = hash
   userEmail.value = localStorage.getItem('gw_email') || ''
+  probeLocalMode()
 })
+
+// 免登录模式探测: 单机自用打开开关后网关全部接口免凭证 —— 此时即使没有
+// token 也直接进面板(用户信息用 /api/auth/me 的默认用户补齐, 供侧栏展示)。
+async function probeLocalMode() {
+  if (showLogin.value === false) return
+  try {
+    const resp = await api.get('/api/auth/local-mode')
+    if (resp.data?.auth_disabled) {
+      try {
+        const me = await api.get('/api/auth/me')
+        if (me.data) {
+          localStorage.setItem('gw_email', me.data.email || '')
+          localStorage.setItem('gw_username', me.data.username || '')
+        }
+      } catch { /* me 失败不阻断(无已注册用户时后端会 401, 保持登录页) */ }
+      userEmail.value = localStorage.getItem('gw_email') || ''
+      showLogin.value = false
+    }
+  } catch { /* 后端不可达或鉴权开启 → 停在登录页 */ }
+}
 
 function onSelect(index) {
   activePage.value = index

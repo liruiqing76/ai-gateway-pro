@@ -16,7 +16,8 @@
       "chats": "Chat History",
       "requests": "Requests",
       "experience": "Experience",
-      "settings": "Settings"
+      "settings": "Settings",
+      "channels": "Free Channels"
     }
   },
   "common": {
@@ -40,7 +41,8 @@
     "unknownError": "Unknown error",
     "operationFailed": "Operation failed",
     "warning": "Warning",
-    "savedOk": "Saved"
+    "savedOk": "Saved",
+    "copyFailed": "Copy failed"
   },
   "login": {
     "subtitle": "Aggregate free quotas · One API for all models",
@@ -66,6 +68,12 @@
     "generalCard": "General",
     "language": "Interface language",
     "languageDesc": "Switch the UI language. Only affects this device",
+    "languageDesc": "Switch the UI language. Only affects this device",
+    "localMode": "Passwordless mode",
+    "localModeDesc": "Recommended for single-machine use: after enabling, the admin panel opens without login and /v1 calls skip the API key check. Takes effect immediately, no restart needed",
+    "localModeWarn": "Only enable when the gateway listens on localhost (127.0.0.1); if exposed to LAN/Internet, any device can use your gateway",
+    "localModeOn": "Passwordless mode enabled - refresh the page to skip login",
+    "localModeOff": "Passwordless mode disabled - next visit requires login",
     "autoStartCard": "Desktop App",
     "autoStart": "Launch at startup",
     "autoStartDesc": "Start AI Gateway automatically when you sign in to Windows, so scheduled check-ins never miss",

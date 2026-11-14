@@ -4,6 +4,7 @@
       <h2>{{ $t('models.title') }}</h2>
       <div style="display:flex;gap:8px;align-items:center">
         <el-radio-group v-model="viewMode" size="small" @change="loadData">
+          <el-radio-button value="models">{{ $t('models.byModelName') }}</el-radio-button>
           <el-radio-button value="providers">{{ $t('models.byChannel') }}</el-radio-button>
           <el-radio-button value="routers">{{ $t('models.byRouterGroup') }}</el-radio-button>
         </el-radio-group>
@@ -33,6 +34,105 @@
         </div>
       </div>
     </div>
+
+    <!-- 按模型名分组: 同一模型名下展示所有提供它的渠道与实时状态 -->
+    <template v-if="viewMode === 'models'">
+      <div class="catalog-toolbar">
+        <el-input v-model="catalogSearch" :placeholder="$t('models.catalogSearchPlaceholder')" clearable style="width:280px" />
+        <span class="catalog-hint">{{ $t('models.catalogHint') }}</span>
+      </div>
+      <div v-if="loading" v-loading="loading" style="min-height:200px" />
+      <div v-else-if="filteredCatalog.length === 0" style="text-align:center;padding:60px;color:var(--gw-text-tertiary)">
+        {{ $t('models.noProviders') }}
+      </div>
+      <div v-else class="catalog-list">
+        <el-card v-for="m in filteredCatalog" :key="m.model" shadow="hover" class="catalog-card">
+          <template #header>
+            <div class="card-header">
+              <div class="card-header-left">
+                <span class="model-code catalog-model-name">{{ m.model }}</span>
+                <el-tag size="small" :type="m.usable_count > 0 ? 'success' : 'danger'" style="margin-left:8px">
+                  {{ m.usable_count }}/{{ m.total_count }}
+                </el-tag>
+              </div>
+              <div class="card-header-right">
+                <span class="model-count">
+                  {{ $t('models.modelCount', { count: m.total_count }) }}
+                  <template v-if="m.min_rate === 0">· {{ $t('models.catalogHasFree') }}</template>
+                </span>
+              </div>
+            </div>
+          </template>
+          <el-table :data="m.providers" :empty-text="$t('models.noModels')" stripe size="small" style="width:100%">
+            <el-table-column :label="$t('models.catalogProvider')" min-width="150">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ row.provider }}</el-tag>
+                <el-tag v-if="row.free" size="small" type="success" effect="plain" style="margin-left:4px">
+                  {{ $t('models.catalogFree') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('models.catalogStatus')" min-width="160">
+              <template #default="{ row }">
+                <el-tooltip v-if="row.downed" :content="row.downed.reason" placement="top">
+                  <el-tag size="small" type="danger" effect="dark">
+                    {{ $t('models.catalogStatusDowned', { at: row.downed.recovers_at }) }}
+                  </el-tag>
+                </el-tooltip>
+                <el-tooltip v-else-if="row.circuit_open" :content="row.lane_resume?.reason || ''" placement="top">
+                  <el-tag size="small" type="warning" effect="dark">
+                    {{ $t('models.catalogStatusCooldown', { at: row.cooldown_until }) }}
+                  </el-tag>
+                </el-tooltip>
+                <el-tag v-else size="small" type="success">{{ $t('models.catalogStatusAvailable') }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column min-width="150">
+              <template #header>
+                <span class="rate-header">
+                  {{ $t('models.catalogRate') }}
+                  <el-tooltip :content="$t('models.catalogRateTip')" placement="top">
+                    <el-icon style="vertical-align:middle"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+              </template>
+              <template #default="{ row }">
+                <el-input-number
+                  :model-value="row.rate"
+                  :min="0" :max="10000" :step="0.5" :controls="false"
+                  size="small" style="width:90px"
+                  @change="val => saveRate(row, val)"
+                />
+                <el-tag v-if="row.rate_source === 'auto'" size="small" type="info" effect="plain"
+                        style="margin-left:4px" :title="$t('models.rateAutoTip')">
+                  {{ $t('models.rateAuto') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('models.catalogQuality')" width="90" align="center">
+              <template #default="{ row }">
+                <span class="count" :class="scoreClass(row.quality_score)">{{ row.quality_score.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('models.catalogLatency')" width="100" align="center">
+              <template #default="{ row }">
+                <span class="count" :class="latencyClass(row.avg_latency_ms)">
+                  {{ row.avg_latency_ms ? Math.round(row.avg_latency_ms) + 'ms' : '—' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('models.catalogToday')" width="130" align="center">
+              <template #default="{ row }">
+                <span v-if="row.today_calls > 0">
+                  {{ row.today_calls }} · {{ formatTokens(row.today_tokens) }}
+                </span>
+                <span v-else style="color:#aeaeb2">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </div>
+    </template>
 
     <!-- 按渠道分组 -->
     <template v-if="viewMode === 'providers'">
@@ -118,19 +218,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
 const { t } = useI18n()
 
-const viewMode = ref('providers')
+const viewMode = ref('models')
 const loading = ref(false)
 const testing = ref(false)
 const providers = ref([])
 const routerGroups = ref([])
 const contextLengths = reactive({})
+
+// 按模型名目录: [{ model, providers: [...], usable_count, total_count, min_rate }]
+const catalog = ref([])
+const catalogSearch = ref('')
+const filteredCatalog = computed(() => {
+  const q = catalogSearch.value.trim().toLowerCase()
+  if (!q) return catalog.value
+  return catalog.value.filter(m =>
+    m.model.toLowerCase().includes(q) ||
+    (m.providers || []).some(e => e.provider.toLowerCase().includes(q)))
+})
 
 // 路由组测速: { high_quality: { available, latency_ms, error, selected_model, strategy_label } }
 const groupSpeeds = ref(null)
@@ -152,10 +263,50 @@ function formatTime(iso) {
   } catch { return iso }
 }
 
+function latencyClass(ms) {
+  if (!ms) return ''
+  if (ms < 2000) return 'green'
+  if (ms < 10000) return 'yellow'
+  return 'red'
+}
+
+function scoreClass(score) {
+  if (score >= 0.5) return 'green'
+  if (score > 0) return 'yellow'
+  return score < 0 ? 'red' : ''
+}
+
+function formatTokens(n) {
+  if (!n) return '0'
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+  return String(n)
+}
+
+async function saveRate(row, val) {
+  if (val == null) return
+  try {
+    await api.put('/api/models/rate', {
+      provider: row.provider, model: row.model, rate: val,
+    })
+    row.rate = val
+    ElMessage.success(t('models.catalogRateSaved'))
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || t('models.catalogRateFailed'))
+  }
+}
+
 async function loadData() {
   loading.value = true
   try {
-    if (viewMode.value === 'providers') {
+    if (viewMode.value === 'models') {
+      const r = await api.get('/api/models/catalog')
+      catalog.value = r.data?.models || []
+      for (const m of catalog.value) {
+        for (const e of (m.providers || [])) e.model = m.model
+      }
+      return
+    } else if (viewMode.value === 'providers') {
       const r = await api.get('/api/providers')
       providers.value = r.data || []
       // 上下文长度由后端 /api/providers 统一返回, 不再需要前端硬编码表
@@ -351,4 +502,34 @@ onUnmounted(() => {
   font-size: 11px;
   color: #86868b;
 }
+.catalog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.catalog-hint {
+  font-size: 12px;
+  color: #86868b;
+}
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.catalog-card {
+  border-radius: 10px;
+}
+.catalog-model-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.rate-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.count.green { color: #34c759; }
+.count.yellow { color: #ff9f0a; }
+.count.red { color: #ff3b30; }
 </style>

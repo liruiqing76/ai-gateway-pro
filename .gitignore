@@ -30,7 +30,6 @@ build_src/
 
 # 运行时数据 / 敏感配置
 backend/data/*.db
-desktop/checkin/*_config.json
 *.log
 data/
 
@@ -46,9 +45,7 @@ data/
 
 # 根目录历史杂项文件（形如 =0.19.0 的残留）
 /=[0-9.]*
-# 签到运行时状态 / 截图 / 数据库备份
-desktop/checkin/shots/
-desktop/checkin/*last_checkin.txt
+# 数据库备份
 backend/data/*.bak*
 
 # i18n/链路验证脚本的临时数据
@@ -64,7 +61,6 @@ backend/data/*.bak*
 /build_dist_tmp/
 /dist_build/
 /agnes_cat_frame.jpg
-desktop/checkin/detect_cache.json
 
 # 本地诊断/临时脚本与构建/覆盖率产物(不入库)
 /temp/
@@ -72,5 +68,11 @@ desktop/checkin/detect_cache.json
 /coverage_html/
 /runtime_tmp/
 /build_log_*.txt
+# Cython 打包(staging)日志形如 build_r15_xxx.txt
+/build_r*.txt
 /_delete_probe.txt
 /.research_zen_models.json
+
+# open-mem: Auto-generated folder context files.
+# Uncomment to exclude from version control (recommended for large projects):
+# **/AGENTS.md

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
 # 智能网关 — 桌面客户端
-# pywebview 壳 + 内嵌 FastAPI + 自动签到
+# pywebview 壳 + 内嵌 FastAPI
 # ============================================================
 import os
 import sys
@@ -15,20 +15,13 @@ import pythoncom
 pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)  # STA
 
 import json
-import signal
-import socket
 import threading
-import subprocess
 import time
 import ctypes
 from pathlib import Path
-from datetime import date
 
 import webview
 import uvicorn
-
-# 调度器(桌面模式)
-from scheduler import CheckinScheduler, CHECKIN_DIR, get_state_dir
 
 if getattr(sys, "frozen", False):
     BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -42,126 +35,10 @@ sys.path.insert(0, str(BASE))
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
-# 调度器(全局单例, 供 API 与 APScheduler 共用)
-_scheduler = CheckinScheduler()
-_apscheduler = None
-
 # ── 随机端口 ──
 
 API_PORT = 8765
 API_URL = f"http://127.0.0.1:{API_PORT}"
-
-# ── 签到 API ──
-class CheckinAPI:
-    """暴露给前端的签到接口"""
-
-    def __init__(self, scheduler: CheckinScheduler = None):
-        self._scheduler = scheduler
-
-    def get_status(self) -> str:
-        """返回 WorkBuddy 和 Trae 的签到状态"""
-        wb = self._read_last("wb_last_checkin.txt")
-        trae = self._read_last("last_checkin.txt")
-        today = str(date.today())
-        result = {
-            "workbuddy": {"signed": wb == today, "date": wb},
-            "trae": {"signed": trae == today, "date": trae},
-        }
-        # 调度状态
-        if self._scheduler:
-            result["schedule"] = {
-                "enabled": self._scheduler.config.get("enabled", True),
-                "workbuddy_time": self._scheduler.config.get("workbuddy_time", "02:00"),
-                "trae_time": self._scheduler.config.get("trae_time", "02:05"),
-                "next_run": self._scheduler.next_run(),
-            }
-        return json.dumps(result, ensure_ascii=False)
-
-    def save_schedule(self, data: str) -> str:
-        """保存定时配置: {"enabled": true, "workbuddy_time": "02:00", ...}"""
-        if not self._scheduler:
-            return json.dumps({"ok": False, "error": "调度器未初始化"})
-        try:
-            payload = json.loads(data) if isinstance(data, str) else data
-            cfg = self._scheduler.set_schedule(payload)
-            return json.dumps({"ok": True, "config": cfg}, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
-
-    def run_checkin(self, app: str = "all") -> str:
-        """执行签到: app = workbuddy | trae | all, 返回各应用执行结果"""
-        results = {}
-        checkin_dir = CHECKIN_DIR  # 打包后为 _MEIPASS/desktop/checkin, 源码为 desktop/checkin
-        if app in ("all", "workbuddy"):
-            results["workbuddy"] = self._run(checkin_dir / "workbuddy_checkin.py")
-        if app in ("all", "trae"):
-            results["trae"] = self._run(checkin_dir / "trae_checkin.py")
-        return json.dumps(results)
-
-    def _read_last(self, filename: str) -> str:
-        # 标记文件读持久目录(打包后= exe旁 data/checkin_state), 与脚本写入位置一致
-        path = get_state_dir() / filename
-        if path.exists():
-            return path.read_text().strip()
-        return ""
-
-    def _run(self, script: Path) -> str:
-        if not script.exists():
-            return "脚本不存在"
-        try:
-            # 标记/日志写持久目录, 脚本通过环境变量感知
-            os.environ["CHECKIN_STATE_DIR"] = str(get_state_dir())
-            # 打包后 python 解释器不可用，签到脚本直接内嵌运行
-            if getattr(sys, "frozen", False):
-                import runpy
-                import io
-                old_cwd = os.getcwd()
-                os.chdir(str(script.parent))
-                try:
-                    # 重定向 stdout/stderr 捕获脚本输出
-                    old_stdout, old_stderr = sys.stdout, sys.stderr
-                    buf = io.StringIO()
-                    sys.stdout = buf
-                    sys.stderr = buf
-                    try:
-                        runpy.run_path(str(script), run_name="__main__")
-                    finally:
-                        sys.stdout, sys.stderr = old_stdout, old_stderr
-                        os.chdir(old_cwd)
-                    output = buf.getvalue().strip()
-                    if output:
-                        return output[-500:]
-                except SystemExit as e:
-                    # 脚本 sys.exit() 抛 SystemExit(BaseException), 普通 except 接不住,
-                    # 逃逸会让 JS 桥 promise 永不 resolve——前端表现为"点了没返回"。
-                    # 必须兜住并把退出原因作为结果返回。
-                    os.chdir(old_cwd) if old_cwd != os.getcwd() else None
-                    output = buf.getvalue().strip()
-                    tail = "签到脚本退出: %s" % (e.code if e.code is not None else "无消息")
-                    return (output + "\n" + tail)[-500:] if output else tail
-                except BaseException as e:
-                    os.chdir(old_cwd) if old_cwd != os.getcwd() else None
-                    output = buf.getvalue().strip()
-                    tail = "签到异常: %r" % (e,)
-                    return (output + "\n" + tail)[-500:] if output else tail
-                # 若 stdout 无输出，从签到日志文件读取最近几行
-                log_file = get_state_dir() / "checkin.log"
-                if log_file.exists():
-                    lines = log_file.read_text(encoding="utf-8", errors="replace").strip().splitlines()
-                    if lines:
-                        return "\n".join(lines[-5:])[-500:]
-                return "签到完成（无输出）"
-            r = subprocess.run(
-                [sys.executable, str(script)],
-                capture_output=True, text=True, timeout=60,
-                cwd=str(script.parent),
-                encoding="utf-8", errors="replace",  # 子进程输出可能含✅等emoji, GBK会炸
-            )
-            return (r.stdout + r.stderr)[-500:]
-        except subprocess.TimeoutExpired:
-            return "签到超时(60s)"
-        except Exception as e:
-            return str(e)
 
 
 # ── 设置 API (开机自启等) ──
@@ -288,13 +165,12 @@ class DesktopBridge:
     """pywebview js_api 容器。
 
     必须用普通对象而不是 dict: pywebview 用 dir() 枚举 js_api 的属性名,
-    字典会被枚举出 dict 内置方法(clear/get/keys...) 而丢失 checkin/settings 两个 key,
-    导致 JS 端 window.pywebview.api.checkin 为 undefined, 调用即报 TypeError。
-    对象属性会被递归展开 → JS 端 window.pywebview.api.checkin.get_status() 可用。
+    字典会被枚举出 dict 内置方法(clear/get/keys...) 而丢失 settings 这个 key,
+    导致 JS 端 window.pywebview.api.settings 为 undefined, 调用即报 TypeError。
+    对象属性会被递归展开 → JS 端 window.pywebview.api.settings.get_settings() 可用。
     """
 
-    def __init__(self, checkin: "CheckinAPI", settings: "SettingsAPI"):
-        self.checkin = checkin
+    def __init__(self, settings: "SettingsAPI"):
         self.settings = settings
 
 
@@ -411,75 +287,22 @@ def _make_closing_handler(window):
     return on_closing
 
 
-def _check_ocr_components() -> None:
-    """打包态自检签到 OCR 原生组件。
-
-    火绒等安全软件常把解包目录里的大体积未签名二进制
-    (onnxruntime_pybind11_state.pyd / onnxruntime.dll) 当"释放型木马"隔离,
-    导致签到脚本 import onnxruntime 失败 → 签到永远无返回。此处启动时核对:
-    缺失则清理解包缓存(下次启动全量重解包)并弹窗告知用户加信任区。
-    """
-    if not getattr(sys, "frozen", False):
-        return
-    mp = Path(getattr(sys, "_MEIPASS", ""))
-    if not mp.is_dir():
-        return
-    missing = [rel for rel in (
-        "onnxruntime/capi/onnxruntime_pybind11_state.pyd",
-        "onnxruntime/capi/onnxruntime.dll",
-    ) if not (mp / rel).exists()]
-    if not missing:
-        return
-    print("[desktop] OCR 组件缺失:", missing)
-    try:
-        import shutil
-        shutil.rmtree(mp, ignore_errors=True)
-        print("[desktop] 已清理解包缓存，重启后将全量重新解包")
-    except Exception as e:
-        print("[desktop] 清理解包缓存失败(忽略):", e)
-    try:
-        ctypes.windll.user32.MessageBoxW(
-            0,
-            "签到 OCR 组件缺失：\n" + "\n".join(missing) + "\n\n"
-            "通常是安全软件(如火绒)隔离了程序解包出的 OCR 引擎组件，"
-            "签到功能会一直无返回。\n\n"
-            "已清理解包缓存，请完全退出本程序后重新启动一次使其重新解包；\n"
-            "并把 智能网关.exe 加入火绒/其他安全软件信任区，避免再次被删。",
-            "智能网关 - OCR 组件缺失", 0x10)
-    except Exception as e:
-        print("[desktop] 提示弹窗失败(忽略):", e)
-
-
 def main():
-    # 单实例锁: 重复启动(双击/开机自启撞车)会让两个实例争抢 8765 端口、
-    # 02:00 两个签到脚本同时抢鼠标互踩。后到者提示后直接退出。
+    # 单实例锁: 重复启动(双击/开机自启撞车)会让两个实例争抢 8765 端口。
+    # 后到者提示后直接退出。
     _mutex = ctypes.windll.kernel32.CreateMutexW(None, False,
                                                  "AI-Gateway-Pro-SingleInstance")
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         ctypes.windll.user32.MessageBoxW(
-            0, "智能网关已在运行，请不要重复启动。\n"
-               "(重复实例会导致定时签到互相干扰。)",
+            0, "智能网关已在运行，请不要重复启动。",
             "智能网关", 0x30)
         return
-
-    # 打包态自检 OCR 组件(被杀软隔离时给出明确指引, 而不是签到静默失败)
-    _check_ocr_components()
 
     # 启动后端
     t = threading.Thread(target=start_backend, daemon=True)
     t.start()
     # 等后端真正就绪再开窗口(轮询 health, 避免 WebView2 在后端未起好时导航失败->空白不重试)
     _wait_for_backend()
-
-    # 启动 APScheduler 定时签到
-    global _apscheduler
-    if _scheduler.config.get("enabled"):
-        from apscheduler.schedulers.background import BackgroundScheduler
-        _apscheduler = BackgroundScheduler(timezone="Asia/Shanghai")
-        jobs = _scheduler.setup_jobs(_apscheduler)
-        if jobs:
-            _apscheduler.start()
-            print(f"[scheduler] 已启动 {len(jobs)} 个定时签到任务")
 
     # 前端路径: 同源加载本地 FastAPI(http://127.0.0.1:8765/)
     # 注意: 必须用 http 同源加载, 不能用 file://
@@ -489,7 +312,6 @@ def main():
     url = f"http://127.0.0.1:{API_PORT}/"
 
     # 创建窗口
-    checkin_api = CheckinAPI(_scheduler)
     settings_api = SettingsAPI()
     window = webview.create_window(
         "智能网关 v0.1.0",   # 加版本号便于任务栏/Alt+Tab 识别; 不带emoji(标题栏左侧已是法斗图标)
@@ -497,12 +319,12 @@ def main():
         width=1200,
         height=800,
         min_size=(900, 600),
-        x=100, y=80,  # 显式位置, 避开屏幕左上角(0,0), 避免被 WorkBuddy 窗口遮盖
+        x=100, y=80,  # 显式位置, 避开屏幕左上角(0,0)
         # 启动兜底底色与应用页面背景一致(--gw-background), 避免内容渲染前闪红
         background_color="#F5F5F7",
         text_select=True,
         confirm_close=False,
-        js_api=DesktopBridge(checkin_api, settings_api),
+        js_api=DesktopBridge(settings_api),
     )
     # 托盘 + 关闭最小化到托盘; shown 事件触发一次, 在窗口就绪后再装图标/托盘
     window.events.shown += lambda: (_apply_native_window_icon(window), _setup_tray(window))
